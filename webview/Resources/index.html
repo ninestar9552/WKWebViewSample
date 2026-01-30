@@ -78,18 +78,61 @@
         }
 
         .message-box {
-            background: #f8f9fa;
+            background: #1e1e1e;
             border-radius: 8px;
             padding: 12px;
-            min-height: 100px;
-            font-size: 14px;
-            color: #333;
-            line-height: 1.5;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 12px;
+            color: #d4d4d4;
+            line-height: 1.6;
         }
 
         .message-box:empty::before {
             content: "메시지가 여기에 표시됩니다.";
-            color: #999;
+            color: #666;
+        }
+
+        .log-entry {
+            padding: 6px 0;
+            border-bottom: 1px solid #2d2d2d;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-time {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .log-tag {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 1px 5px;
+            border-radius: 3px;
+            margin-left: 4px;
+        }
+
+        .tag-request { background: #1a3a5c; color: #58a6ff; }
+        .tag-success { background: #1a3d2a; color: #3fb950; }
+        .tag-fail    { background: #4d1f1f; color: #f85149; }
+        .tag-info    { background: #2d2a1a; color: #d29922; }
+        .tag-error   { background: #4d1f1f; color: #f85149; }
+
+        .log-direction {
+            font-size: 11px;
+            color: #888;
+            margin-left: 4px;
+        }
+
+        .log-body {
+            color: #d4d4d4;
+            margin-top: 2px;
+            padding-left: 4px;
         }
     </style>
 </head>

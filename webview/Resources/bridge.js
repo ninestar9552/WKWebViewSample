@@ -1,6 +1,16 @@
 /**
  * Native Bridge Communication Module
- * WKWebView와 Native 간 통신을 위한 JavaScript 모듈
+ * WKWebView와 Native 간 양방향 통신을 위한 JavaScript 모듈
+ *
+ * [요청] JS → Native 메시지 구조: { type, callback, data }
+ * - type: 메시지 종류 (Native의 BridgeMessageType enum과 1:1 매핑)
+ * - callback: Native가 응답 시 호출할 JS 함수명
+ * - data: 전달할 데이터 객체
+ *
+ * [응답] Native → JS 응답 규격: { success, message, data }
+ * - success: 요청 처리 성공/실패 여부
+ * - message: 사용자에게 표시할 수 있는 안내 메시지 (팝업, 토스트 등)
+ * - data: 응답 데이터 (성공/실패 모두 포함 가능)
  */
 
 // ============================================
@@ -9,20 +19,23 @@
 
 /**
  * Native Bridge로 메시지를 전송하는 공통 함수
+ * - postMessage 호출 전 Bridge 존재 여부를 확인하여 안전하게 전송
+ * - 모든 JS → Native 전송이 이 함수를 거치도록 통일하여 중복 코드 제거
  * @param {Object} message - 전송할 메시지 객체 { type, callback, data }
- * @param {string} logMessage - 로그에 표시할 메시지
+ * @param {string} logMessage - 화면에 표시할 로그 메시지
  */
 function postToNative(message, logMessage) {
     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
         window.webkit.messageHandlers.nativeBridge.postMessage(message);
-        appendMessage("[요청][JS → Native]\n" + logMessage);
+        appendMessage("request", "JS → Native", logMessage);
     } else {
-        appendMessage("[오류] Native Bridge를 사용할 수 없습니다.");
+        appendMessage("error", "", "Native Bridge를 사용할 수 없습니다.");
     }
 }
 
 /**
- * Native에 메시지를 전송합니다.
+ * Native에 인사 메시지를 전송합니다.
+ * - callback으로 "receiveMessageFromNative"를 지정하여 Native가 응답할 함수를 알려줌
  */
 function sendMessageToNative() {
     postToNative({
@@ -36,7 +49,8 @@ function sendMessageToNative() {
 }
 
 /**
- * Native에 데이터를 요청합니다.
+ * Native에 사용자 정보를 요청합니다.
+ * - callback으로 "receiveUserInfo"를 지정하여 Native가 해당 함수로 데이터를 전달
  */
 function requestDataFromNative() {
     postToNative({
@@ -47,26 +61,36 @@ function requestDataFromNative() {
 }
 
 // ============================================
-// Native → JS 통신
+// Native → JS 통신 (콜백 함수)
+// Native가 evaluateJavaScript로 호출하는 함수들
 // ============================================
 
 /**
- * Native에서 호출하는 함수
- * @param {Object} data - Native에서 전달받은 데이터
+ * greeting 요청에 대한 Native의 응답을 수신
+ * @param {Object} response - { success, message, data }
  */
-function receiveMessageFromNative(data) {
-    appendMessage("[수신][Native → JS]\n" + data.message);
+function receiveMessageFromNative(response) {
+    if (response.success) {
+        appendMessage("success", "Native → JS", response.message + "\n" + response.data.text);
+    } else {
+        appendMessage("fail", "Native → JS", response.message);
+    }
 }
 
 /**
- * Native에서 사용자 정보를 전달받는 함수
- * @param {Object} userInfo - 사용자 정보 객체
+ * getUserInfo 요청에 대한 Native의 응답을 수신
+ * @param {Object} response - { success, message, data }
  */
-function receiveUserInfo(userInfo) {
-    appendMessage("[수신][Native → JS] 사용자 정보");
-    appendMessage("  - 이름: " + userInfo.name);
-    appendMessage("  - 디바이스: " + userInfo.device);
-    appendMessage("  - OS 버전: " + userInfo.osVersion);
+function receiveUserInfo(response) {
+    if (response.success) {
+        var body = response.message
+            + "\n이름: " + response.data.name
+            + "\n디바이스: " + response.data.device
+            + "\nOS: " + response.data.osVersion;
+        appendMessage("success", "Native → JS", body);
+    } else {
+        appendMessage("fail", "Native → JS", response.message);
+    }
 }
 
 // ============================================
@@ -74,14 +98,45 @@ function receiveUserInfo(userInfo) {
 // ============================================
 
 /**
- * 메시지 박스에 메시지를 추가합니다.
- * @param {string} message - 표시할 메시지
+ * 메시지 박스에 로그 스타일로 메시지를 추가
+ * - tag별 색상으로 요청/성공/실패/정보를 시각적으로 구분
+ * - 24시간 형식 타임스탬프 (HH:MM:SS)
+ * - 새 메시지 추가 후 자동 스크롤
+ * @param {string} tag - 메시지 유형 (request, success, fail, info, error)
+ * @param {string} direction - 통신 방향 (예: "JS → Native")
+ * @param {string} body - 메시지 내용
  */
-function appendMessage(message) {
+function appendMessage(tag, direction, body) {
     const messageBox = document.getElementById("messageBox");
-    const timestamp = new Date().toLocaleTimeString("ko-KR");
-    const formatted = message.replace(/\n/g, "<br>");
-    messageBox.innerHTML += "[" + timestamp + "] " + formatted + "<br>";
+
+    // 24시간 형식 타임스탬프
+    const now = new Date();
+    const timestamp = [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map(function(n) { return n < 10 ? "0" + n : n; })
+        .join(":");
+
+    // 태그 라벨 매핑
+    var tagLabels = {
+        request: "요청", success: "수신", fail: "실패", info: "정보", error: "오류"
+    };
+    var tagLabel = tagLabels[tag] || tag;
+
+    // \n을 <br>로 변환
+    var formattedBody = body.replace(/\n/g, "<br>");
+
+    // 방향 표시 (비어있으면 생략)
+    var directionHtml = direction
+        ? '<span class="log-direction">' + direction + '</span>'
+        : '';
+
+    var html = '<div class="log-entry">'
+        + '<span class="log-time">' + timestamp + '</span>'
+        + '<span class="log-tag tag-' + tag + '">' + tagLabel + '</span>'
+        + directionHtml
+        + '<div class="log-body">' + formattedBody + '</div>'
+        + '</div>';
+
+    messageBox.innerHTML += html;
     messageBox.scrollTop = messageBox.scrollHeight;
 }
 
@@ -93,7 +148,7 @@ function clearMessages() {
     messageBox.innerHTML = "";
 }
 
-// 페이지 로드 완료 시 초기화
+// 페이지 로드 완료 시 Bridge 초기화 상태를 표시
 document.addEventListener("DOMContentLoaded", function() {
-    appendMessage("Bridge 초기화 완료");
+    appendMessage("info", "", "Bridge 초기화 완료");
 });
