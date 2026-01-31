@@ -7,16 +7,23 @@
 
 import UIKit
 import WebKit
+import Combine
 
 /// WKWebView를 표시하고 로컬 HTML을 로딩하는 ViewController
 /// - Bridge 통신 로직은 BridgeHandler에 위임하여 ViewController는 화면 구성에만 집중
+/// - ViewModel의 @Published 상태를 Combine으로 구독하여 UI를 업데이트
 class ViewController: UIViewController {
 
     // MARK: - Properties
 
     /// Bridge 통신을 전담하는 핸들러 객체
-    /// - ViewController가 WKScriptMessageHandler를 직접 채택하지 않고 위임
     private let bridgeHandler = BridgeHandler()
+
+    /// 비즈니스 로직과 상태를 관리하는 ViewModel
+    private let viewModel = WebViewViewModel()
+
+    /// Combine 구독을 저장하는 Set
+    private var cancellables = Set<AnyCancellable>()
 
     private var webView: WKWebView!
 
@@ -25,11 +32,11 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupWebView()
+        setupBindings()
         loadLocalHTML()
     }
 
     /// WKWebView는 messageHandler를 strong 참조하므로, deinit 시 반드시 해제
-    /// - 해제하지 않으면 ViewController가 메모리에서 해제되지 않는 retain cycle 발생
     deinit {
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: BridgeHandler.handlerName)
     }
@@ -42,9 +49,9 @@ class ViewController: UIViewController {
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.translatesAutoresizingMaskIntoConstraints = false
 
-        /// WebView 생성 후 BridgeHandler에 참조를 주입
-        /// - BridgeHandler가 evaluateJavaScript로 JS 콜백을 호출하기 위해 필요
-        bridgeHandler.configure(webView: webView)
+        /// WebView 생성 후 BridgeHandler와 ViewModel에 상호 참조를 주입
+        bridgeHandler.configure(webView: webView, viewModel: viewModel)
+        viewModel.configure(bridgeHandler: bridgeHandler)
 
         /// 스크롤 시 키보드 자동 숨김 (입력 폼이 있는 웹뷰에서 유용)
         webView.scrollView.keyboardDismissMode = .onDrag
@@ -57,8 +64,6 @@ class ViewController: UIViewController {
         webView.scrollView.bounces = false
 
         /// Safari Web Inspector 디버깅 허용 (iOS 16.4+)
-        /// - Safari → 개발자용 → 시뮬레이터/기기 선택으로 WebView 디버깅 가능
-        /// - DEBUG 빌드에서만 활성화하여 릴리스 빌드에서는 비활성화
         #if DEBUG
         if #available(iOS 16.4, *) {
             webView.isInspectable = true
@@ -75,22 +80,49 @@ class ViewController: UIViewController {
         ])
     }
 
+    // MARK: - Combine Bindings
+
+    /// ViewModel의 @Published 프로퍼티를 구독하여 UI 업데이트
+    private func setupBindings() {
+        viewModel.$isLoading
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isLoading in
+                _ = self
+                // 로딩 인디케이터 표시/숨김 처리
+                print("isLoading: \(isLoading)")
+            }
+            .store(in: &cancellables)
+
+        viewModel.$loadProgress
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] progress in
+                _ = self
+                // 프로그레스바 업데이트 처리
+                print("loadProgress: \(progress)")
+            }
+            .store(in: &cancellables)
+
+        viewModel.$error
+            .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
+            .sink { [weak self] error in
+                _ = self
+                // 에러 알림 표시 처리
+                print("ViewModel error: \(error.localizedDescription)")
+            }
+            .store(in: &cancellables)
+
+    }
+
     // MARK: - Configuration
 
-    /// WKWebViewConfiguration 생성
-    /// - WebView 생성 전에 반드시 설정해야 하는 항목들을 모아서 관리
-    /// - WebView 생성 후에는 configuration을 변경할 수 없으므로 별도 메서드로 분리
     private func createWebViewConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
-
-        // --- Bridge 등록 ---
 
         /// JS에서 window.webkit.messageHandlers.nativeBridge.postMessage()로 호출할 수 있도록 등록
         configuration.userContentController.add(bridgeHandler, name: BridgeHandler.handlerName)
 
-        // --- 기본 설정 ---
-
-        /// JavaScript 활성화 (WKWebView 기본값 true이지만 명시적으로 선언)
+        /// JavaScript 활성화
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         /// 텍스트 상호작용 활성화 (iOS 15+, 길게 눌러 텍스트 선택/복사 등)
@@ -103,8 +135,6 @@ class ViewController: UIViewController {
 
     // MARK: - Load HTML
 
-    /// Bundle에 포함된 로컬 HTML 파일을 로딩
-    /// - allowingReadAccessTo: HTML이 참조하는 JS, CSS 등 같은 디렉토리 내 리소스 접근을 허용
     private func loadLocalHTML() {
         guard let htmlURL = Bundle.main.url(
             forResource: "index",
