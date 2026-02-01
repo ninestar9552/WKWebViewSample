@@ -199,8 +199,34 @@
             <button class="btn-warning" onclick="navigateToInvalidUrl()">
                 존재하지 않는 URL 로딩 (에러 테스트)
             </button>
+            <button class="btn-danger" onclick="navigateToHttp404()">
+                HTTP 404 응답 (navigationResponse 테스트)
+            </button>
             <button class="btn-danger" onclick="triggerUnknownBridgeMessage()">
                 알 수 없는 Bridge 메시지 전송 (에러 테스트)
+            </button>
+        </div>
+
+        <div class="section">
+            <div class="section-title">JS Dialog 테스트 (WKUIDelegate)</div>
+            <button class="btn-primary" onclick="testAlert()">
+                alert() 테스트
+            </button>
+            <button class="btn-secondary" onclick="testConfirm()">
+                confirm() 테스트
+            </button>
+            <button class="btn-warning" onclick="testPrompt()">
+                prompt() 테스트
+            </button>
+        </div>
+
+        <div class="section">
+            <div class="section-title">URL 스킴 테스트</div>
+            <button class="btn-primary" onclick="testTelScheme()">
+                tel: 스킴 (전화 앱 호출)
+            </button>
+            <button class="btn-secondary" onclick="testMailScheme()">
+                mailto: 스킴 (메일 앱 호출)
             </button>
         </div>
 

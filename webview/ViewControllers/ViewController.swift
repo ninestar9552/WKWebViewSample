@@ -60,6 +60,7 @@ class ViewController: UIViewController {
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.navigationDelegate = self
+        webView.uiDelegate = self
 
         /// WebView 생성 후 BridgeHandler와 ViewModel에 상호 참조를 주입
         bridgeHandler.configure(webView: webView, viewModel: viewModel)
@@ -205,14 +206,129 @@ class ViewController: UIViewController {
 
 /// WebView 네비게이션 이벤트 처리
 /// - 로딩 상태는 KVO estimatedProgress가 단일 소스로 관리
-/// - NavigationDelegate는 에러 처리만 담당
+/// - NavigationDelegate는 에러 처리 및 URL 스킴 정책을 담당
 extension ViewController: WKNavigationDelegate {
 
+    /// URL 스킴에 따라 네비게이션 허용/차단을 결정
+    /// - http/https: WebView 내부에서 로딩 허용
+    /// - tel, mailto 등 외부 스킴: 시스템에 위임 (전화, 메일 앱 등)
+    /// - 그 외: 차단
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        switch url.scheme {
+        case "http", "https", "file":
+            decisionHandler(.allow)
+
+        case "tel", "mailto", "sms":
+            UIApplication.shared.open(url)
+            decisionHandler(.cancel)
+
+        default:
+            decisionHandler(.cancel)
+        }
+    }
+
+    /// HTTP 응답 상태 코드를 검사하여 4xx/5xx 에러 시 로딩을 차단
+    /// - 이 메서드가 없으면 서버가 404/500을 반환해도 빈 페이지를 그대로 표시
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        guard let httpResponse = navigationResponse.response as? HTTPURLResponse else {
+            decisionHandler(.allow)
+            return
+        }
+
+        print("navigationResponse statusCode: \(httpResponse.statusCode)")
+
+        if httpResponse.statusCode >= 400 {
+            decisionHandler(.cancel)
+            let error = NSError(
+                domain: "WebView",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResponse.statusCode) 오류가 발생했습니다."]
+            )
+            viewModel.handleError(error)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        print("didFailProvisionalNavigation \(error)")
         viewModel.handleError(error)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        print("didFail \(error)")
         viewModel.handleError(error)
+    }
+}
+
+// MARK: - WKUIDelegate
+
+/// WKWebView에서 JS alert/confirm/prompt 호출 시 네이티브 UIAlertController로 표시
+/// - WKUIDelegate를 구현하지 않으면 JS의 alert(), confirm(), prompt()가 무시됨
+extension ViewController: WKUIDelegate {
+
+    /// JS alert() → 네이티브 알럿
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptAlertPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping () -> Void
+    ) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in
+            completionHandler()
+        })
+        present(alert, animated: true)
+    }
+
+    /// JS confirm() → 확인/취소 알럿, 사용자 선택에 따라 true/false 반환
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptConfirmPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in
+            completionHandler(false)
+        })
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in
+            completionHandler(true)
+        })
+        present(alert, animated: true)
+    }
+
+    /// JS prompt() → 텍스트 입력 알럿, 입력값 또는 nil 반환
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptTextInputPanelWithPrompt prompt: String,
+        defaultText: String?,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping (String?) -> Void
+    ) {
+        let alert = UIAlertController(title: nil, message: prompt, preferredStyle: .alert)
+        alert.addTextField { textField in
+            textField.text = defaultText
+        }
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in
+            completionHandler(nil)
+        })
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { _ in
+            completionHandler(alert.textFields?.first?.text)
+        })
+        present(alert, animated: true)
     }
 }

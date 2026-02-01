@@ -91,6 +91,16 @@ function navigateToInvalidUrl() {
 }
 
 /**
+ * HTTP 404 응답을 반환하는 URL로 이동하여 navigationResponse 에러 처리를 테스트
+ * - decidePolicyFor navigationResponse에서 상태 코드 400 이상 시 차단 및 에러 알럿
+ * - 존재하지 않는 경로로 요청하여 서버가 404를 반환하도록 유도
+ */
+function navigateToHttp404() {
+    appendMessage("info", "", "에러 테스트: HTTP 404 응답");
+    window.location.href = "https://www.apple.com/this-page-does-not-exist-404-test";
+}
+
+/**
  * Native에 정의되지 않은 메시지 타입을 전송하여 에러 응답을 테스트
  * - BridgeMessageType enum에 없는 타입이므로 "요청을 처리할 수 없습니다" 응답이 와야 함
  */
@@ -112,6 +122,60 @@ function receiveErrorResponse(response) {
         appendMessage("fail", "Native → JS", response.message);
     }
 }
+
+// ============================================
+// JS Dialog 테스트 (WKUIDelegate)
+// WKUIDelegate를 구현하지 않으면 아래 함수들이 무시됨
+// ============================================
+
+/**
+ * JS alert() 테스트 — 네이티브 UIAlertController로 표시되어야 함
+ */
+function testAlert() {
+    appendMessage("info", "", "alert() 호출");
+    alert("이것은 JS alert() 입니다.\nWKUIDelegate가 네이티브 알럿으로 변환합니다.");
+}
+
+/**
+ * JS confirm() 테스트 — 확인/취소 선택 결과를 로그에 표시
+ */
+function testConfirm() {
+    appendMessage("info", "", "confirm() 호출");
+    var result = confirm("확인 또는 취소를 선택하세요.");
+    appendMessage("success", "", "confirm 결과: " + result);
+}
+
+/**
+ * JS prompt() 테스트 — 입력값을 로그에 표시
+ */
+function testPrompt() {
+    appendMessage("info", "", "prompt() 호출");
+    var input = prompt("이름을 입력하세요:", "차순혁");
+    appendMessage("success", "", "prompt 입력값: " + (input !== null ? input : "(취소됨)"));
+}
+
+// ============================================
+// URL 스킴 테스트
+// decidePolicyFor navigationAction에서 외부 스킴을 시스템에 위임
+// ============================================
+
+/**
+ * tel: 스킴으로 전화 앱 호출 테스트
+ * - decidePolicyFor에서 UIApplication.shared.open으로 처리
+ */
+function testTelScheme() {
+    appendMessage("info", "", "tel: 스킴 호출");
+    window.location.href = "tel:010-0000-0000";
+}
+
+/**
+ * mailto: 스킴으로 메일 앱 호출 테스트
+ */
+function testMailScheme() {
+    appendMessage("info", "", "mailto: 스킴 호출");
+    window.location.href = "mailto:test@example.com";
+}
+
 
 // ============================================
 // Native → JS 통신 (콜백 함수)
