@@ -62,6 +62,18 @@ class ViewController: UIViewController {
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
+        /// Custom User-Agent 설정
+        /// - 기본 User-Agent 뒤에 앱 정보를 추가하여 서버/웹에서 앱 환경을 식별할 수 있도록 함
+        /// - 웹 프론트엔드에서 navigator.userAgent로 네이티브 앱 여부를 판별하여 Bridge 호출 분기에 사용
+        let device = UIDevice.current
+        let customAgent = "webviewSample/\(Bundle.main.appVersion) iOS/\(device.systemVersion) \(device.modelIdentifier)"
+        webView.customUserAgent = nil
+        webView.evaluateJavaScript("navigator.userAgent") { [weak self] result, _ in
+            if let defaultAgent = result as? String {
+                self?.webView.customUserAgent = "\(defaultAgent) \(customAgent)"
+            }
+        }
+
         /// WebView 생성 후 BridgeHandler와 ViewModel에 상호 참조를 주입
         bridgeHandler.configure(webView: webView, viewModel: viewModel)
         viewModel.configure(bridgeHandler: bridgeHandler)

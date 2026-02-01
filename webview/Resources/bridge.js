@@ -155,6 +155,19 @@ function testPrompt() {
 }
 
 // ============================================
+// 환경 정보
+// ============================================
+
+/**
+ * 현재 WebView의 User-Agent를 로그에 표시
+ * - Custom User-Agent가 정상 설정되었는지 확인하는 테스트
+ * - navigator.userAgent에서 앱 식별자(webviewSample)가 포함되어 있어야 함
+ */
+function showUserAgent() {
+    appendMessage("info", "", "User-Agent:\n" + navigator.userAgent);
+}
+
+// ============================================
 // URL 스킴 테스트
 // decidePolicyFor navigationAction에서 외부 스킴을 시스템에 위임
 // ============================================
