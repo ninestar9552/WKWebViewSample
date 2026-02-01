@@ -59,6 +59,46 @@
             margin-bottom: 0;
         }
 
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        .input-group button {
+            width: auto;
+            padding: 12px 16px;
+            margin-bottom: 0;
+            white-space: nowrap;
+        }
+
+        .btn-danger {
+            background-color: #FF3B30;
+            color: white;
+        }
+
+        .btn-danger:active {
+            background-color: #c0302a;
+        }
+
+        .btn-warning {
+            background-color: #FF9500;
+            color: white;
+        }
+
+        .btn-warning:active {
+            background-color: #c77400;
+        }
+
         .btn-primary {
             background-color: #007AFF;
             color: white;
@@ -147,6 +187,20 @@
             </button>
             <button class="btn-secondary" onclick="requestDataFromNative()">
                 Native에서 데이터 요청
+            </button>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Navigation 테스트</div>
+            <div class="input-group">
+                <input id="urlInput" type="url" placeholder="https://example.com" value="https://www.apple.com">
+                <button class="btn-primary" onclick="navigateToUrl()">이동</button>
+            </div>
+            <button class="btn-warning" onclick="navigateToInvalidUrl()">
+                존재하지 않는 URL 로딩 (에러 테스트)
+            </button>
+            <button class="btn-danger" onclick="triggerUnknownBridgeMessage()">
+                알 수 없는 Bridge 메시지 전송 (에러 테스트)
             </button>
         </div>
 

@@ -61,6 +61,59 @@ function requestDataFromNative() {
 }
 
 // ============================================
+// Navigation 테스트
+// ============================================
+
+/**
+ * URL 입력칸의 주소로 WebView를 이동시켜 프로그레스바 동작을 테스트
+ * - 실제 웹페이지 로딩으로 KVO estimatedProgress 변화를 확인
+ */
+function navigateToUrl() {
+    var url = document.getElementById("urlInput").value.trim();
+    if (!url) {
+        appendMessage("error", "", "URL을 입력해주세요.");
+        return;
+    }
+    if (!url.startsWith("http")) {
+        url = "https://" + url;
+    }
+    appendMessage("info", "", "페이지 이동: " + url);
+    window.location.href = url;
+}
+
+/**
+ * 존재하지 않는 URL로 이동하여 NavigationDelegate의 에러 처리를 테스트
+ * - didFailProvisionalNavigation이 호출되어 에러 알럿이 표시되어야 함
+ */
+function navigateToInvalidUrl() {
+    appendMessage("info", "", "에러 테스트: 존재하지 않는 도메인으로 이동");
+    window.location.href = "https://this-domain-does-not-exist-12345.com";
+}
+
+/**
+ * Native에 정의되지 않은 메시지 타입을 전송하여 에러 응답을 테스트
+ * - BridgeMessageType enum에 없는 타입이므로 "요청을 처리할 수 없습니다" 응답이 와야 함
+ */
+function triggerUnknownBridgeMessage() {
+    postToNative({
+        type: "unknownType",
+        callback: "receiveErrorResponse",
+        data: {}
+    }, "에러 테스트: 알 수 없는 메시지 타입 전송");
+}
+
+/**
+ * 알 수 없는 메시지 타입에 대한 Native 에러 응답 수신
+ */
+function receiveErrorResponse(response) {
+    if (response.success) {
+        appendMessage("success", "Native → JS", response.message);
+    } else {
+        appendMessage("fail", "Native → JS", response.message);
+    }
+}
+
+// ============================================
 // Native → JS 통신 (콜백 함수)
 // Native가 evaluateJavaScript로 호출하는 함수들
 // ============================================

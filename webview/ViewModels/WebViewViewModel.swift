@@ -15,9 +15,12 @@ final class WebViewViewModel {
 
     // MARK: - Published State
 
-    @Published var isLoading: Bool = false
+    /// KVO estimatedProgress 값을 반영하는 로딩 진행률 (0.0 ~ 1.0)
     @Published var loadProgress: Double = 0.0
+
+    /// NavigationDelegate에서 전달받은 에러
     @Published var error: Error? = nil
+
     // MARK: - Dependencies
 
     private weak var bridgeHandler: BridgeHandler?
@@ -51,14 +54,16 @@ final class WebViewViewModel {
         }
     }
 
-    // MARK: - Loading State (향후 NavigationDelegate용)
+    // MARK: - Loading State
 
-    func updateLoadingState(isLoading: Bool, progress: Double) {
-        self.isLoading = isLoading
+    /// KVO estimatedProgress 값을 @Published로 반영
+    func updateLoadProgress(_ progress: Double) {
         self.loadProgress = progress
     }
 
+    /// 네비게이션 에러 발생 시 로딩 상태를 초기화하고 에러를 전달
     func handleError(_ error: Error) {
+        self.loadProgress = 0.0
         self.error = error
     }
 
