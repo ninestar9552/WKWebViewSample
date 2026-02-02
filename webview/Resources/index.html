@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>WebView Bridge Sample</title>
     <style>
         * {
@@ -250,6 +250,9 @@
                         <input id="urlInput" type="url" placeholder="https://example.com" value="https://www.apple.com">
                         <button class="btn-primary" onclick="navigateToUrl()">이동</button>
                     </div>
+                    <button class="btn-warning" onclick="navigateToBlockedDomain()">
+                        화이트리스트 미등록 도메인 (보안 테스트)
+                    </button>
                     <button class="btn-warning" onclick="navigateToInvalidUrl()">
                         존재하지 않는 URL 로딩 (에러 테스트)
                     </button>

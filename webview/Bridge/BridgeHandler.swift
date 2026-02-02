@@ -38,6 +38,13 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     ) {
         guard message.name == Self.handlerName else { return }
 
+        /// Bridge 메시지의 출처를 검증하여 신뢰할 수 없는 페이지의 호출을 차단
+        /// - 외부 페이지가 postMessage로 네이티브 기능에 접근하는 것을 방지
+        guard SecurityConfig.isTrustedBridgeOrigin(message.frameInfo.request.url) else {
+            print("[Security] 신뢰할 수 없는 출처의 Bridge 호출 차단: \(message.frameInfo.request.url?.absoluteString ?? "unknown")")
+            return
+        }
+
         print("📩 [JS → Native]\n\(message.body)")
 
         guard let body = message.body as? [String: Any],

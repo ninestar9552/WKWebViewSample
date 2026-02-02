@@ -91,6 +91,15 @@ function navigateToInvalidUrl() {
 }
 
 /**
+ * 화이트리스트에 없는 도메인으로 이동하여 차단되는지 테스트
+ * - SecurityConfig.allowedDomains에 등록되지 않은 도메인은 차단됨
+ */
+function navigateToBlockedDomain() {
+    appendMessage("info", "", "보안 테스트: 화이트리스트 미등록 도메인으로 이동");
+    window.location.href = "https://www.example.com";
+}
+
+/**
  * HTTP 404 응답을 반환하는 URL로 이동하여 navigationResponse 에러 처리를 테스트
  * - decidePolicyFor navigationResponse에서 상태 코드 400 이상 시 차단 및 에러 알럿
  * - 존재하지 않는 경로로 요청하여 서버가 404를 반환하도록 유도

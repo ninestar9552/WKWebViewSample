@@ -236,8 +236,24 @@ extension ViewController: WKNavigationDelegate {
         }
 
         switch url.scheme {
-        case "http", "https", "file":
-            decisionHandler(.allow)
+        case "file":
+            /// 로컬 HTML 로딩은 별도 검증 없이 허용
+            decisionHandler(SecurityConfig.allowFileScheme ? .allow : .cancel)
+
+        case "http", "https":
+            /// 화이트리스트에 등록된 도메인만 허용, 미등록 도메인은 차단
+            if SecurityConfig.isDomainAllowed(url.host) {
+                decisionHandler(.allow)
+            } else {
+                print("[Security] 차단된 도메인: \(url.host ?? "unknown")")
+                decisionHandler(.cancel)
+                let error = NSError(
+                    domain: "WebView",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "허용되지 않은 도메인입니다: \(url.host ?? "")"]
+                )
+                viewModel.handleError(error)
+            }
 
         case "tel", "mailto", "sms":
             UIApplication.shared.open(url)
