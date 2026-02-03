@@ -9,7 +9,7 @@ import UIKit
 import WebKit
 
 /// JS ↔ Native 양방향 Bridge 통신을 전담하는 핸들러 (인프라 역할)
-/// - 메시지 파싱과 JS 응답 전송만 담당
+/// - 메시지 파싱(Codable 디코딩)과 JS 응답 전송(Codable 인코딩)만 담당
 /// - 비즈니스 로직은 WebViewViewModel에 위임
 final class BridgeHandler: NSObject, WKScriptMessageHandler {
 
@@ -22,6 +22,13 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     /// 비즈니스 로직을 위임할 ViewModel
     weak var viewModel: WebViewViewModel?
 
+    private let decoder = JSONDecoder()
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return encoder
+    }()
+
     /// WebView와 ViewModel 생성 후 참조를 주입받는 메서드
     func configure(webView: WKWebView, viewModel: WebViewViewModel) {
         self.webView = webView
@@ -31,7 +38,8 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     // MARK: - WKScriptMessageHandler
 
     /// JS에서 window.webkit.messageHandlers.nativeBridge.postMessage() 호출 시 실행
-    /// - 메시지 파싱만 수행하고, 비즈니스 로직은 ViewModel에 위임
+    /// - JSON → BridgeRequest Codable 디코딩으로 타입 안전성 확보
+    /// - 비즈니스 로직은 ViewModel에 위임
     func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
@@ -47,28 +55,25 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
 
         print("📩 [JS → Native]\n\(message.body)")
 
-        guard let body = message.body as? [String: Any],
-              let type = body["type"] as? String,
-              let data = body["data"] as? [String: Any] else {
+        guard let request = decodeBridgeRequest(from: message.body) else {
             print("❌ 메시지 파싱 실패: \(message.body)")
+            /// 알 수 없는 type이면 디코딩 자체가 실패하므로, callback을 수동으로 꺼내 에러 응답
+            let callback = (message.body as? [String: Any])?["callback"] as? String
+            sendToJS(function: callback, response: BridgeResponse(success: false, message: "요청을 처리할 수 없습니다."))
             return
         }
 
-        // callback은 옵셔널 — JS에서 응답이 필요 없는 경우 생략 가능
-        let callback = body["callback"] as? String
-        viewModel?.handleBridgeMessage(type: type, data: data, callback: callback)
+        viewModel?.handleBridgeMessage(request)
     }
 
     // MARK: - Native → JS 응답
 
-    /// JS의 콜백 함수를 evaluateJavaScript로 호출하여 응답을 전달
-    /// - ViewModel에서 호출하여 JS에 결과를 전달
-    func sendToJS(function: String?, success: Bool, message: String, data: [String: Any] = [:]) {
+    /// BridgeResponse를 Encodable 인코딩하여 JS 콜백 함수에 전달
+    /// - 제네릭 T 덕분에 핸들러별 응답 구조체를 타입 안전하게 직렬화
+    func sendToJS<T: Encodable>(function: String?, response: BridgeResponse<T>) {
         guard let function = function else { return }
 
-        let response: [String: Any] = ["success": success, "message": message, "data": data]
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: response),
+        guard let jsonData = try? encoder.encode(response),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
 
         let jsCode = "\(function)(\(jsonString));"
@@ -78,5 +83,18 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
                 print("❌ JS 실행 실패: \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: - Private
+
+    /// postMessage의 body를 BridgeRequest로 디코딩
+    /// - WKScriptMessage.body는 Any 타입이므로 먼저 JSON Data로 변환 후 JSONDecoder로 디코딩
+    /// - BridgeRequest가 Decodable이므로 type, callback, data를 한번에 디코딩
+    private func decodeBridgeRequest(from body: Any) -> BridgeRequest? {
+        guard let dict = body as? [String: Any],
+              let jsonData = try? JSONSerialization.data(withJSONObject: dict) else {
+            return nil
+        }
+        return try? decoder.decode(BridgeRequest.self, from: jsonData)
     }
 }

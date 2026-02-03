@@ -9,7 +9,7 @@ import UIKit
 import Combine
 
 /// WebView 화면의 비즈니스 로직과 상태를 관리하는 ViewModel
-/// - BridgeHandler에서 파싱된 메시지를 받아 비즈니스 로직을 처리
+/// - BridgeHandler에서 파싱된 BridgeRequest를 받아 비즈니스 로직을 처리
 /// - @Published 프로퍼티를 통해 ViewController에 상태 변경을 전달
 final class WebViewViewModel {
 
@@ -35,22 +35,19 @@ final class WebViewViewModel {
 
     // MARK: - Bridge Message Handling
 
-    /// BridgeHandler에서 파싱된 메시지를 받아 비즈니스 로직을 처리
-    /// - type 문자열을 BridgeMessageType enum으로 변환 후 분기 처리
-    /// - 처리 결과를 bridgeHandler.sendToJS()로 JS에 응답
-    func handleBridgeMessage(type: String, data: [String: Any], callback: String?) {
-        guard let messageType = BridgeMessageType(rawValue: type) else {
-            print("⚠️ 알 수 없는 메시지 타입: \(type)")
-            bridgeHandler?.sendToJS(function: callback, success: false, message: "요청을 처리할 수 없습니다.")
-            return
-        }
-
-        switch messageType {
+    /// BridgeHandler에서 디코딩된 BridgeRequest를 받아 비즈니스 로직을 처리
+    /// - Codable로 디코딩된 타입 안전한 요청 객체를 사용
+    /// - 처리 결과를 BridgeResponse<T>로 구성하여 JS에 응답
+    func handleBridgeMessage(_ request: BridgeRequest) {
+        switch request.type {
         case .greeting:
-            handleGreeting(data: data, callback: callback)
+            handleGreeting(request)
 
         case .getUserInfo:
-            handleGetUserInfo(callback: callback)
+            handleGetUserInfo(request)
+
+        case .getAppVersion:
+            handleGetAppVersion(request)
         }
     }
 
@@ -69,29 +66,52 @@ final class WebViewViewModel {
 
     // MARK: - Private Handlers
 
-    private func handleGreeting(data: [String: Any], callback: String?) {
-        if let text = data["text"] as? String {
+    private func handleGreeting(_ request: BridgeRequest) {
+        guard let data = request.decodeData(GreetingRequestData.self) else {
             bridgeHandler?.sendToJS(
-                function: callback,
+                function: request.callback,
+                response: BridgeResponse(success: false, message: "메시지 전송에 실패했습니다.")
+            )
+            return
+        }
+
+        bridgeHandler?.sendToJS(
+            function: request.callback,
+            response: BridgeResponse(
                 success: true,
                 message: "메시지를 수신했습니다.",
-                data: ["text": "\(text)"]
+                data: GreetingResponseData(text: data.text)
             )
-        } else {
-            bridgeHandler?.sendToJS(function: callback, success: false, message: "메시지 전송에 실패했습니다.")
-        }
+        )
     }
 
-    private func handleGetUserInfo(callback: String?) {
+    private func handleGetUserInfo(_ request: BridgeRequest) {
         bridgeHandler?.sendToJS(
-            function: callback,
-            success: true,
-            message: "사용자 정보를 불러왔습니다.",
-            data: [
-                "name": "차순혁",
-                "device": UIDevice.current.model,
-                "osVersion": UIDevice.current.systemVersion
-            ]
+            function: request.callback,
+            response: BridgeResponse(
+                success: true,
+                message: "사용자 정보를 불러왔습니다.",
+                data: UserInfoResponseData(
+                    name: "차순혁",
+                    device: UIDevice.current.model,
+                    osVersion: UIDevice.current.systemVersion
+                )
+            )
+        )
+    }
+
+    private func handleGetAppVersion(_ request: BridgeRequest) {
+        bridgeHandler?.sendToJS(
+            function: request.callback,
+            response: BridgeResponse(
+                success: true,
+                message: "앱 버전 정보를 불러왔습니다.",
+                data: AppVersionResponseData(
+                    appVersion: Bundle.main.appVersion,
+                    osVersion: UIDevice.current.systemVersion,
+                    device: UIDevice.current.modelIdentifier
+                )
+            )
         )
     }
 }

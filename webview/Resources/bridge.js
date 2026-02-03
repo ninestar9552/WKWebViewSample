@@ -60,6 +60,18 @@ function requestDataFromNative() {
     }, "데이터 요청: getUserInfo");
 }
 
+/**
+ * Native에 앱 버전 정보를 요청합니다.
+ * - 앱 버전, OS 버전, 디바이스 모델을 한번에 조회
+ */
+function requestAppVersion() {
+    postToNative({
+        type: "getAppVersion",
+        callback: "receiveAppVersion",
+        data: {}
+    }, "데이터 요청: getAppVersion");
+}
+
 // ============================================
 // Navigation 테스트
 // ============================================
@@ -226,6 +238,22 @@ function receiveUserInfo(response) {
             + "\n이름: " + response.data.name
             + "\n디바이스: " + response.data.device
             + "\nOS: " + response.data.osVersion;
+        appendMessage("success", "Native → JS", body);
+    } else {
+        appendMessage("fail", "Native → JS", response.message);
+    }
+}
+
+/**
+ * getAppVersion 요청에 대한 Native의 응답을 수신
+ * @param {Object} response - { success, message, data }
+ */
+function receiveAppVersion(response) {
+    if (response.success) {
+        var body = response.message
+            + "\n앱 버전: " + response.data.appVersion
+            + "\nOS: " + response.data.osVersion
+            + "\n디바이스: " + response.data.device;
         appendMessage("success", "Native → JS", body);
     } else {
         appendMessage("fail", "Native → JS", response.message);
