@@ -21,9 +21,10 @@ final class WebViewViewModel {
     /// NavigationDelegate에서 전달받은 에러
     @Published var error: Error? = nil
 
+    // MARK: - Events
+
     /// Bridge openUrl 요청 이벤트 (네비게이션 push용)
-    /// - 일회성 이벤트이므로 PassthroughSubject 사용
-    let urlToOpen = PassthroughSubject<URL, Never>()
+    @Event var urlToOpen: URL
 
     // MARK: - Dependencies
 
@@ -132,7 +133,7 @@ final class WebViewViewModel {
             return
         }
 
-        urlToOpen.send(url)
+        urlToOpen = url
 
         bridgeHandler?.sendToJS(
             function: request.callback,

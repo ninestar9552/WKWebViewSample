@@ -261,7 +261,7 @@ final class ViewController: UIViewController {
     }
 
     private func bindOpenUrl() {
-        viewModel.urlToOpen
+        viewModel.$urlToOpen
             .receive(on: DispatchQueue.main)
             .sink { [weak self] url in
                 let webVC = ViewController(url: url)
