@@ -176,6 +176,20 @@ function testPrompt() {
 }
 
 // ============================================
+// 새 창 열기 테스트
+// ============================================
+
+/**
+ * window.open()으로 새 창을 열어 createWebViewWith 동작을 테스트
+ * - Native에서 새 ViewController가 모달로 표시되어야 함
+ * - 팝업 창에서도 Bridge 통신이 정상 동작해야 함
+ */
+function openPopupWindow() {
+    appendMessage("info", "", "window.open() 호출");
+    window.open("https://www.apple.com", "_blank");
+}
+
+// ============================================
 // 환경 정보
 // ============================================
 

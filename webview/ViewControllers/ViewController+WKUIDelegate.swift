@@ -8,9 +8,41 @@
 import UIKit
 import WebKit
 
-/// WKWebView에서 JS alert/confirm/prompt 호출 시 네이티브 UIAlertController로 표시
-/// - WKUIDelegate를 구현하지 않으면 JS의 alert(), confirm(), prompt()가 무시됨
+/// WKWebView UI 관련 이벤트 처리
+/// - JS alert/confirm/prompt → 네이티브 UIAlertController
+/// - window.open() → 팝업 ViewController 생성
+/// - window.close() → 팝업 dismiss
 extension ViewController: WKUIDelegate {
+
+    // MARK: - 새 창 열기/닫기
+
+    /// JS window.open() 또는 target="_blank" 링크 클릭 시 호출
+    /// - 전달받은 configuration 객체를 그대로 사용 (WebKit이 동일 객체 여부 검증)
+    /// - 반환한 WebView에 WebKit이 해당 페이지를 로드
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        print("createWebViewWith: \(navigationAction.request.url?.absoluteString ?? "nil")")
+
+        let popupVC = ViewController(configuration: configuration)
+        popupVC.modalPresentationStyle = .overFullScreen
+        present(popupVC, animated: true)
+
+        return popupVC.webView
+    }
+
+    /// JS window.close() 호출 시 실행
+    /// - 팝업 모드일 때 자기 자신을 dismiss
+    /// - 부모 창에서 popup.close() 호출 시에도 팝업의 이 메서드가 호출됨
+    func webViewDidClose(_ webView: WKWebView) {
+        print("webViewDidClose")
+        dismiss(animated: true)
+    }
+
+    // MARK: - JS Dialog
 
     /// JS alert() → 네이티브 알럿
     func webView(
