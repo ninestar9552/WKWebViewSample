@@ -28,10 +28,13 @@ final class ViewController: UIViewController {
     /// WebView 인스턴스 (createWebViewWith에서 반환해야 하므로 internal 접근)
     private(set) var webView: WKWebView!
 
-    /// 외부에서 주입받은 configuration (팝업 모드)
+    /// 외부에서 주입받은 configuration (팝업 모드 - window.open)
     private var externalConfiguration: WKWebViewConfiguration?
 
-    /// 팝업 모드 여부
+    /// 외부에서 주입받은 URL (푸시 모드 - Bridge openUrl)
+    private var initialURL: URL?
+
+    /// 팝업 모드 여부 (window.open → 모달)
     private var isPopupMode: Bool { externalConfiguration != nil }
 
     // MARK: - UI Components
@@ -63,10 +66,16 @@ final class ViewController: UIViewController {
         super.init(coder: coder)
     }
 
-    /// 팝업 모드 생성자
+    /// 팝업 모드 생성자 (window.open → 모달)
     convenience init(configuration: WKWebViewConfiguration) {
         self.init(nibName: nil, bundle: nil)
         self.externalConfiguration = configuration
+    }
+
+    /// 푸시 모드 생성자 (Bridge openUrl → 네비게이션 push)
+    convenience init(url: URL) {
+        self.init(nibName: nil, bundle: nil)
+        self.initialURL = url
     }
 
     // MARK: - Lifecycle
@@ -83,9 +92,19 @@ final class ViewController: UIViewController {
         setupProgressView()
         setupBindings()
 
-        if !isPopupMode {
+        loadInitialContent()
+    }
+
+    /// 모드에 따라 초기 콘텐츠 로드
+    private func loadInitialContent() {
+        if let url = initialURL {
+            // 푸시 모드: 외부 URL 로드
+            webView.load(URLRequest(url: url))
+        } else if !isPopupMode {
+            // 일반 모드: 로컬 HTML 로드
             loadLocalHTML()
         }
+        // 팝업 모드: WebKit이 자동으로 페이지 로드
     }
 
     deinit {
@@ -193,6 +212,10 @@ final class ViewController: UIViewController {
         /// pull-to-refresh 등 over scroll 시 배경이 보이지 않도록 bounce 비활성화
         webView.scrollView.bounces = false
 
+        /// 스와이프로 웹 히스토리 앞/뒤 이동 허용
+        /// - WebView에 히스토리가 없으면 자동으로 Navigation pop 제스처가 작동
+        webView.allowsBackForwardNavigationGestures = true
+
         #if DEBUG
         if #available(iOS 16.4, *) {
             webView.isInspectable = true
@@ -210,6 +233,7 @@ final class ViewController: UIViewController {
     private func setupBindings() {
         bindProgress()
         bindError()
+        bindOpenUrl()
     }
 
     /// - KVO 퍼블리셔로 WebView의 estimatedProgress를 관찰하여 ViewModel에 전달
@@ -232,6 +256,16 @@ final class ViewController: UIViewController {
             .compactMap { $0 }
             .sink { [weak self] error in
                 self?.showErrorAlert(error)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func bindOpenUrl() {
+        viewModel.urlToOpen
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] url in
+                let webVC = ViewController(url: url)
+                self?.navigationController?.pushViewController(webVC, animated: true)
             }
             .store(in: &cancellables)
     }

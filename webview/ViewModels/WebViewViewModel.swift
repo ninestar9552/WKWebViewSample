@@ -21,6 +21,10 @@ final class WebViewViewModel {
     /// NavigationDelegate에서 전달받은 에러
     @Published var error: Error? = nil
 
+    /// Bridge openUrl 요청 이벤트 (네비게이션 push용)
+    /// - 일회성 이벤트이므로 PassthroughSubject 사용
+    let urlToOpen = PassthroughSubject<URL, Never>()
+
     // MARK: - Dependencies
 
     private weak var bridgeHandler: BridgeHandler?
@@ -48,6 +52,9 @@ final class WebViewViewModel {
 
         case .getAppVersion:
             handleGetAppVersion(request)
+
+        case .openUrl:
+            handleOpenUrl(request)
         }
     }
 
@@ -112,6 +119,24 @@ final class WebViewViewModel {
                     device: UIDevice.current.modelIdentifier
                 )
             )
+        )
+    }
+
+    private func handleOpenUrl(_ request: BridgeRequest) {
+        guard let data = request.decodeData(OpenUrlRequestData.self),
+              let url = URL(string: data.url) else {
+            bridgeHandler?.sendToJS(
+                function: request.callback,
+                response: BridgeResponse(success: false, message: "유효하지 않은 URL입니다.")
+            )
+            return
+        }
+
+        urlToOpen.send(url)
+
+        bridgeHandler?.sendToJS(
+            function: request.callback,
+            response: BridgeResponse(success: true, message: "새 화면에서 URL을 엽니다.")
         )
     }
 }

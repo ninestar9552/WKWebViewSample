@@ -32,3 +32,8 @@ struct GreetingRequestData: Decodable {
     let text: String
     let timestamp: String?
 }
+
+/// openUrl 요청의 data 구조
+struct OpenUrlRequestData: Decodable {
+    let url: String
+}

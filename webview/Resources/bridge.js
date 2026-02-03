@@ -176,7 +176,7 @@ function testPrompt() {
 }
 
 // ============================================
-// 새 창 열기 테스트
+// 새 창/탭 열기 테스트
 // ============================================
 
 /**
@@ -185,8 +185,32 @@ function testPrompt() {
  * - 팝업 창에서도 Bridge 통신이 정상 동작해야 함
  */
 function openPopupWindow() {
-    appendMessage("info", "", "window.open() 호출");
+    appendMessage("info", "", "window.open() 호출 (모달)");
     window.open("https://www.apple.com", "_blank");
+}
+
+/**
+ * Bridge openUrl로 새 탭(네비게이션 push)에서 URL 열기
+ * - window.open()과 달리 네비게이션 스택에 push
+ * - 스와이프 제스처 충돌 테스트용
+ */
+function openUrlInNewTab() {
+    postToNative({
+        type: "openUrl",
+        callback: "receiveOpenUrlResponse",
+        data: { url: "https://www.apple.com" }
+    }, "새 탭에서 URL 열기 (push)");
+}
+
+/**
+ * openUrl 응답 수신
+ */
+function receiveOpenUrlResponse(response) {
+    if (response.success) {
+        appendMessage("success", "Native → JS", response.message);
+    } else {
+        appendMessage("fail", "Native → JS", response.message);
+    }
 }
 
 // ============================================
