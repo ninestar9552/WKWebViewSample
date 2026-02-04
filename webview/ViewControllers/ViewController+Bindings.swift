@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import WebKit
 import Combine
 
 /// ViewModel ↔ ViewController Combine 바인딩
@@ -17,6 +18,7 @@ extension ViewController {
         bindProgress()
         bindError()
         bindOpenUrl()
+        bindAppLifecycle()
     }
 
     // MARK: - Progress
@@ -88,6 +90,25 @@ extension ViewController {
                 self?.navigationController?.pushViewController(webVC, animated: true)
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - App Lifecycle (백화현상 복구)
+
+    private func bindAppLifecycle() {
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.recoverFromWhiteScreenIfNeeded()
+            }
+            .store(in: &cancellables)
+    }
+
+    /// 백화현상 복구: WebContent 프로세스 종료 후 앱이 다시 활성화되면 마지막 URL로 재로딩
+    private func recoverFromWhiteScreenIfNeeded() {
+        guard needsReload, let url = lastLoadedURL else { return }
+        print("🔄 백화현상 복구: \(url)")
+        needsReload = false
+        webView.load(URLRequest(url: url))
     }
 
     // MARK: - Error Alert

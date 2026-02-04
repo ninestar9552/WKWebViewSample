@@ -34,6 +34,12 @@ final class ViewController: UIViewController {
     /// 외부에서 주입받은 URL (푸시 모드 - Bridge openUrl)
     private var initialURL: URL?
 
+    /// 백화현상 복구용 마지막 유효 URL
+    var lastLoadedURL: URL?
+
+    /// 백화현상 발생 여부 (didBecomeActive에서 복구)
+    var needsReload = false
+
     /// 팝업 모드 여부 (window.open → 모달)
     private var isPopupMode: Bool { externalConfiguration != nil }
 

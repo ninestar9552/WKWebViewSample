@@ -93,4 +93,19 @@ extension ViewController: WKNavigationDelegate {
         print("didFail \(error)")
         viewModel.handleError(error)
     }
+
+    /// 페이지 로딩 완료 시 현재 URL을 저장 (백화현상 복구용)
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let url = webView.url, url.absoluteString != "about:blank" {
+            lastLoadedURL = url
+        }
+    }
+
+    /// WKWebView 콘텐츠 프로세스가 종료되었을 때 호출 (백화현상)
+    /// - 메모리 부족 등으로 WebView 렌더링 프로세스가 종료되면 흰 화면이 됨
+    /// - 플래그만 설정하고 viewWillAppear에서 실제 복구 수행
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        print("⚠️ WebContent Process Terminated (백화현상)")
+        needsReload = true
+    }
 }
