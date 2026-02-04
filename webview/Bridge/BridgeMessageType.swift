@@ -16,4 +16,5 @@ enum BridgeMessageType: String, Codable {
     case getUserInfo    // 디바이스 사용자 정보 요청
     case getAppVersion  // 앱 버전 정보 요청
     case openUrl        // 새 화면에서 URL 열기 (navigation push)
+    case showToast      // 토스트 메시지 표시
 }

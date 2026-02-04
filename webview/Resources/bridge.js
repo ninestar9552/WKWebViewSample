@@ -72,6 +72,29 @@ function requestAppVersion() {
     }, "데이터 요청: getAppVersion");
 }
 
+/**
+ * Native에 토스트 메시지 표시를 요청합니다.
+ * - ViewModel의 @Event를 통해 ViewController로 전달되어 토스트 UI 표시
+ */
+function showNativeToast() {
+    postToNative({
+        type: "showToast",
+        callback: "receiveToastResponse",
+        data: { message: "안녕하세요! Native 토스트입니다." }
+    }, "토스트 표시 요청");
+}
+
+/**
+ * showToast 응답 수신
+ */
+function receiveToastResponse(response) {
+    if (response.success) {
+        appendMessage("success", "Native → JS", response.message);
+    } else {
+        appendMessage("fail", "Native → JS", response.message);
+    }
+}
+
 // ============================================
 // Navigation 테스트
 // ============================================

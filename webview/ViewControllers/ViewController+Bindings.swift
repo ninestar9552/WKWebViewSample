@@ -18,6 +18,7 @@ extension ViewController {
         bindProgress()
         bindError()
         bindOpenUrl()
+        bindToast()
         bindAppLifecycle()
     }
 
@@ -90,6 +91,61 @@ extension ViewController {
                 self?.navigationController?.pushViewController(webVC, animated: true)
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - Toast
+
+    private func bindToast() {
+        viewModel.$toastMessage
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                self?.showToast(message)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func showToast(_ message: String) {
+        let toastLabel = UILabel()
+        toastLabel.text = message
+        toastLabel.textColor = .white
+        toastLabel.textAlignment = .center
+        toastLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        toastLabel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        toastLabel.layer.cornerRadius = 8
+        toastLabel.clipsToBounds = true
+        toastLabel.alpha = 0
+        toastLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(toastLabel)
+
+        NSLayoutConstraint.activate([
+            toastLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            toastLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -50),
+            toastLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            toastLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+            toastLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 36)
+        ])
+
+        // 패딩을 위한 인셋 설정
+        toastLabel.layoutMargins = UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+
+        // 텍스트 인셋 적용을 위해 너비 제약 추가
+        let padding: CGFloat = 32
+        let maxWidth = view.bounds.width - 40 - padding
+        let textWidth = message.size(withAttributes: [.font: toastLabel.font!]).width
+        let labelWidth = min(textWidth + padding, maxWidth)
+        toastLabel.widthAnchor.constraint(equalToConstant: labelWidth).isActive = true
+
+        // 애니메이션: 페이드 인 → 유지 → 페이드 아웃
+        UIView.animate(withDuration: 0.3) {
+            toastLabel.alpha = 1
+        } completion: { _ in
+            UIView.animate(withDuration: 0.3, delay: 2.0) {
+                toastLabel.alpha = 0
+            } completion: { _ in
+                toastLabel.removeFromSuperview()
+            }
+        }
     }
 
     // MARK: - App Lifecycle (백화현상 복구)

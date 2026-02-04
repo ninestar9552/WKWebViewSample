@@ -26,6 +26,9 @@ final class WebViewViewModel {
     /// Bridge openUrl 요청 이벤트 (네비게이션 push용)
     @Event var urlToOpen: URL
 
+    /// Bridge showToast 요청 이벤트
+    @Event var toastMessage: String
+
     // MARK: - Dependencies
 
     private weak var bridgeHandler: BridgeHandler?
@@ -56,6 +59,9 @@ final class WebViewViewModel {
 
         case .openUrl:
             handleOpenUrl(request)
+
+        case .showToast:
+            handleShowToast(request)
         }
     }
 
@@ -138,6 +144,23 @@ final class WebViewViewModel {
         bridgeHandler?.sendToJS(
             function: request.callback,
             response: BridgeResponse(success: true, message: "새 화면에서 URL을 엽니다.")
+        )
+    }
+
+    private func handleShowToast(_ request: BridgeRequest) {
+        guard let data = request.decodeData(ShowToastRequestData.self) else {
+            bridgeHandler?.sendToJS(
+                function: request.callback,
+                response: BridgeResponse(success: false, message: "메시지가 없습니다.")
+            )
+            return
+        }
+
+        toastMessage = data.message
+
+        bridgeHandler?.sendToJS(
+            function: request.callback,
+            response: BridgeResponse(success: true, message: "토스트를 표시합니다.")
         )
     }
 }

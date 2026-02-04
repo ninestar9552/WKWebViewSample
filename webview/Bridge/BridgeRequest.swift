@@ -37,3 +37,8 @@ struct GreetingRequestData: Decodable {
 struct OpenUrlRequestData: Decodable {
     let url: String
 }
+
+/// showToast 요청의 data 구조
+struct ShowToastRequestData: Decodable {
+    let message: String
+}
