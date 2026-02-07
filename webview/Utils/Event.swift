@@ -10,13 +10,14 @@ import Combine
 /// 일회성 이벤트를 위한 Property Wrapper
 /// - @Published와 동일한 문법으로 사용 가능
 /// - 내부적으로 PassthroughSubject를 사용하여 값을 보관하지 않음
-/// - 값 읽기 불가 (write-only)
+/// - 값 읽기 불가 (write-only): 읽기 시도 시 컴파일 에러 발생
 @propertyWrapper
 public struct Event<Value> {
     private let subject = PassthroughSubject<Value, Never>()
 
     public var wrappedValue: Value {
-        get { fatalError("@Event is write-only. Use $property to subscribe.") }
+        @available(*, unavailable, message: "@Event is write-only. Use $property to subscribe.")
+        get { fatalError() }
         set { subject.send(newValue) }
     }
 
