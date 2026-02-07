@@ -102,7 +102,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler, BridgeMessageSender
     /// JS 콜백 함수명의 유효성 검증 (JS Injection 방지)
     /// - 영문, 숫자, _, $, . 만 허용 (예: "receiveUserInfo", "window.callback")
     /// - 코드 삽입 시도 (세미콜론, 괄호, 공백 등)를 차단
-    private func isValidJSFunctionName(_ name: String) -> Bool {
+    func isValidJSFunctionName(_ name: String) -> Bool {
         let pattern = "^[a-zA-Z_$][a-zA-Z0-9_$.]*$"
         return name.range(of: pattern, options: .regularExpression) != nil
     }
