@@ -70,8 +70,14 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
 
     /// BridgeResponse를 Encodable 인코딩하여 JS 콜백 함수에 전달
     /// - 제네릭 T 덕분에 핸들러별 응답 구조체를 타입 안전하게 직렬화
+    /// - callback 함수명의 유효성을 검증하여 JS Injection을 방지
     func sendToJS<T: Encodable>(function: String?, response: BridgeResponse<T>) {
         guard let function = function else { return }
+
+        guard isValidJSFunctionName(function) else {
+            print("[Security] 유효하지 않은 콜백 함수명 차단: \(function)")
+            return
+        }
 
         guard let jsonData = try? encoder.encode(response),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
@@ -86,6 +92,14 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     }
 
     // MARK: - Private
+
+    /// JS 콜백 함수명의 유효성 검증 (JS Injection 방지)
+    /// - 영문, 숫자, _, $, . 만 허용 (예: "receiveUserInfo", "window.callback")
+    /// - 코드 삽입 시도 (세미콜론, 괄호, 공백 등)를 차단
+    private func isValidJSFunctionName(_ name: String) -> Bool {
+        let pattern = "^[a-zA-Z_$][a-zA-Z0-9_$.]*$"
+        return name.range(of: pattern, options: .regularExpression) != nil
+    }
 
     /// postMessage의 body를 BridgeRequest로 디코딩
     /// - WKScriptMessage.body는 Any 타입이므로 먼저 JSON Data로 변환 후 JSONDecoder로 디코딩
