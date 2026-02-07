@@ -122,7 +122,7 @@ function navigateToUrl() {
  */
 function navigateToInvalidUrl() {
     appendMessage("info", "", "에러 테스트: 존재하지 않는 도메인으로 이동");
-    window.location.href = "https://this-domain-does-not-exist-12345.com";
+    window.location.href = "https://this-does-not-exist-12345.apple.com";
 }
 
 /**
