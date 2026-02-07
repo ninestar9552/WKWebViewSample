@@ -56,11 +56,11 @@ extension ViewController {
 
     private func completeProgress() {
         progressView.setProgress(1.0, animated: true)
-        UIView.animate(withDuration: 0.3, delay: 0.5) {
-            self.progressView.alpha = 0
-        } completion: { _ in
-            self.progressView.isHidden = true
-            self.progressView.setProgress(0, animated: false)
+        UIView.animate(withDuration: 0.3, delay: 0.5) { [weak self] in
+            self?.progressView.alpha = 0
+        } completion: { [weak self] _ in
+            self?.progressView.isHidden = true
+            self?.progressView.setProgress(0, animated: false)
         }
     }
 

@@ -8,10 +8,16 @@
 import UIKit
 import WebKit
 
+/// Native → JS 응답 전송 인터페이스
+/// - ViewModel이 이 프로토콜에만 의존하여 테스트 시 Mock 교체 가능
+protocol BridgeMessageSender: AnyObject {
+    func sendToJS<T: Encodable>(function: String?, response: BridgeResponse<T>)
+}
+
 /// JS ↔ Native 양방향 Bridge 통신을 전담하는 핸들러 (인프라 역할)
 /// - 메시지 파싱(Codable 디코딩)과 JS 응답 전송(Codable 인코딩)만 담당
 /// - 비즈니스 로직은 WebViewViewModel에 위임
-final class BridgeHandler: NSObject, WKScriptMessageHandler {
+final class BridgeHandler: NSObject, WKScriptMessageHandler, BridgeMessageSender {
 
     /// JS에서 postMessage 호출 시 사용하는 핸들러 이름
     static let handlerName = "nativeBridge"

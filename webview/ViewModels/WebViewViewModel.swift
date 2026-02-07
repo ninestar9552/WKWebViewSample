@@ -9,6 +9,7 @@ import UIKit
 import Combine
 
 /// WebView 화면의 비즈니스 로직과 상태를 관리하는 ViewModel
+/// - Web ↔ Native Bridge 요청을 처리하되, WebKit 구현에는 의존하지 않음
 /// - BridgeHandler에서 파싱된 BridgeRequest를 받아 비즈니스 로직을 처리
 /// - @Published 프로퍼티를 통해 ViewController에 상태 변경을 전달
 final class WebViewViewModel {
@@ -18,10 +19,10 @@ final class WebViewViewModel {
     /// KVO estimatedProgress 값을 반영하는 로딩 진행률 (0.0 ~ 1.0)
     @Published var loadProgress: Double = 0.0
 
-    /// NavigationDelegate에서 전달받은 에러
-    @Published var error: Error? = nil
-
     // MARK: - Events
+    
+    /// NavigationDelegate에서 전달받은 에러
+    @Event var error: Error
 
     /// Bridge openUrl 요청 이벤트 (네비게이션 push용)
     @Event var urlToOpen: URL
@@ -30,14 +31,20 @@ final class WebViewViewModel {
     @Event var toastMessage: String
 
     // MARK: - Dependencies
-
-    private weak var bridgeHandler: BridgeHandler?
+    
+    /// JS로 응답을 전송하는 역할(BridgeMessageSender)에 대한 의존성
+    /// - 구체 구현(BridgeHandler)에 의존하지 않기 위해 프로토콜로 추상화
+    /// - ViewModel은 WebKit / WKWebView를 알지 않음
+    /// - 테스트 시 Mock 구현체로 대체 가능
+    /// - ViewController가 생명주기를 소유하므로 weak 참조
+    private weak var bridgeHandler: (any BridgeMessageSender)?
 
     // MARK: - Configuration
 
-    /// BridgeHandler 참조를 주입받는 메서드
+    /// BridgeMessageSender 참조를 주입받는 메서드
     /// - ViewModel이 JS 응답을 보낼 때 bridgeHandler.sendToJS()를 호출하기 위해 필요
-    func configure(bridgeHandler: BridgeHandler) {
+    /// - 프로토콜 타입이므로 테스트 시 Mock 객체로 교체 가능
+    func configure(bridgeHandler: any BridgeMessageSender) {
         self.bridgeHandler = bridgeHandler
     }
 
