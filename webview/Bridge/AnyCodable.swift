@@ -10,7 +10,9 @@ import Foundation
 /// Codable에서 동적 타입의 값을 지원하기 위한 래퍼
 /// - BridgeRequest의 data 필드를 JSON 구조 그대로 보존하는 데 사용
 /// - decodeData<T>()에서 다시 직렬화 후 타입별 구조체로 디코딩
-struct AnyCodable: Codable {
+/// - let(불변) + JSON 호환 타입만 저장하므로 @unchecked Sendable이 안전
+nonisolated
+struct AnyCodable: Codable, @unchecked Sendable {
     let value: Any
 
     init(_ value: Any) {

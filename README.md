@@ -156,7 +156,7 @@ webview/
 ## 기술 스택
 
 - **iOS 15.0+**
-- **Swift 5**
+- **Swift 6**
 - **WKWebView** (WebKit)
 - **Combine** (Reactive 바인딩)
 - **MVVM** 아키텍처

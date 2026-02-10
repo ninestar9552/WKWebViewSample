@@ -10,7 +10,8 @@ import Foundation
 /// Native → JS 응답의 공통 구조 (제네릭)
 /// - T에 핸들러별 Encodable 구조체를 지정하여 응답 데이터도 타입 안전하게 구성
 /// - data가 필요 없는 에러 응답은 BridgeResponse(success:message:) 이니셜라이저 사용
-struct BridgeResponse<T: Encodable>: Encodable {
+/// - T에 Sendable 제약을 추가하여 BridgeResponse 자체도 Sendable로 보장
+nonisolated struct BridgeResponse<T: Encodable & Sendable>: Encodable, Sendable {
     let success: Bool
     let message: String
     let data: T?
@@ -26,24 +27,24 @@ extension BridgeResponse where T == EmptyData {
 }
 
 /// data가 필요 없는 응답에 사용하는 빈 타입
-struct EmptyData: Encodable {}
+nonisolated struct EmptyData: Encodable, Sendable {}
 
 // MARK: - 타입별 응답 데이터 모델
 
 /// greeting 응답의 data 구조
-struct GreetingResponseData: Encodable {
+nonisolated struct GreetingResponseData: Encodable, Sendable {
     let text: String
 }
 
 /// getUserInfo 응답의 data 구조
-struct UserInfoResponseData: Encodable {
+nonisolated struct UserInfoResponseData: Encodable, Sendable {
     let name: String
     let device: String
     let osVersion: String
 }
 
 /// getAppVersion 응답의 data 구조
-struct AppVersionResponseData: Encodable {
+nonisolated struct AppVersionResponseData: Encodable, Sendable {
     let appVersion: String
     let osVersion: String
     let device: String

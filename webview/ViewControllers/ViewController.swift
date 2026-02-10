@@ -114,7 +114,11 @@ final class ViewController: UIViewController {
     }
 
     deinit {
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: BridgeHandler.handlerName)
+        /// deinit은 nonisolated이지만 실제로는 메인 스레드에서 호출됨
+        /// assumeIsolated로 MainActor 프로퍼티 접근을 허용
+        MainActor.assumeIsolated {
+            webView?.configuration.userContentController.removeScriptMessageHandler(forName: BridgeHandler.handlerName)
+        }
     }
 
     // MARK: - Setup UI
@@ -202,9 +206,11 @@ final class ViewController: UIViewController {
         let customAgent = "webviewSample/\(Bundle.main.appVersion) iOS/\(device.systemVersion) \(device.modelIdentifier)"
 
         webView.customUserAgent = nil
-        webView.evaluateJavaScript("navigator.userAgent") { [weak self] result, _ in
-            if let defaultAgent = result as? String {
-                self?.webView.customUserAgent = "\(defaultAgent) \(customAgent)"
+        /// completion handler → async/await 전환 (Swift 6 Sendable 클로저 요구사항 해결)
+        Task { [weak self] in
+            guard let self else { return }
+            if let defaultAgent = try? await webView.evaluateJavaScript("navigator.userAgent") as? String {
+                webView.customUserAgent = "\(defaultAgent) \(customAgent)"
             }
         }
     }

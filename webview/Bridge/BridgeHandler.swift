@@ -20,7 +20,8 @@ protocol BridgeMessageSender: AnyObject {
 final class BridgeHandler: NSObject, WKScriptMessageHandler, BridgeMessageSender {
 
     /// JS에서 postMessage 호출 시 사용하는 핸들러 이름
-    static let handlerName = "nativeBridge"
+    /// - deinit(nonisolated)에서 접근하므로 nonisolated 필수
+    nonisolated static let handlerName = "nativeBridge"
 
     /// evaluateJavaScript 호출을 위해 WebView 참조를 보유
     private weak var webView: WKWebView?
@@ -90,7 +91,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler, BridgeMessageSender
 
         let jsCode = "\(function)(\(jsonString));"
         print("📤 [Native → JS]\n\(jsCode)")
-        webView?.evaluateJavaScript(jsCode) { _, error in
+        webView?.evaluateJavaScript(jsCode) { @Sendable _, error in
             if let error = error {
                 print("❌ JS 실행 실패: \(error.localizedDescription)")
             }
@@ -102,7 +103,8 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler, BridgeMessageSender
     /// JS 콜백 함수명의 유효성 검증 (JS Injection 방지)
     /// - 영문, 숫자, _, $, . 만 허용 (예: "receiveUserInfo", "window.callback")
     /// - 코드 삽입 시도 (세미콜론, 괄호, 공백 등)를 차단
-    func isValidJSFunctionName(_ name: String) -> Bool {
+    /// - 외부 상태를 참조하지 않는 순수 함수이므로 nonisolated
+    nonisolated func isValidJSFunctionName(_ name: String) -> Bool {
         let pattern = "^[a-zA-Z_$][a-zA-Z0-9_$.]*$"
         return name.range(of: pattern, options: .regularExpression) != nil
     }

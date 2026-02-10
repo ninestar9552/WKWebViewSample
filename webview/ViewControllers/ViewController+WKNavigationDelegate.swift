@@ -12,7 +12,7 @@ import WebKit
 /// - 로딩 상태는 KVO estimatedProgress가 단일 소스로 관리
 /// - NavigationDelegate는 에러 처리 및 URL 스킴 정책을 담당
 extension ViewController: WKNavigationDelegate {
-
+    
     /// URL 스킴에 따라 네비게이션 허용/차단을 결정
     /// - http/https: 화이트리스트에 등록된 도메인만 허용
     /// - file: 로컬 HTML 로딩 허용
@@ -21,7 +21,7 @@ extension ViewController: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
         guard let url = navigationAction.request.url else {
             decisionHandler(.cancel)
@@ -62,7 +62,7 @@ extension ViewController: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,
-        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void
     ) {
         guard let httpResponse = navigationResponse.response as? HTTPURLResponse else {
             decisionHandler(.allow)

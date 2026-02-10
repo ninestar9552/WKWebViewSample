@@ -10,6 +10,7 @@ import Foundation
 /// WebView 보안 정책을 한 곳에서 관리하는 설정
 /// - URL 네비게이션 화이트리스트와 Bridge 통신 허용 도메인을 분리하여 관리
 /// - 새로운 도메인 추가 시 이 파일만 수정하면 됨
+nonisolated
 enum SecurityConfig {
 
     // MARK: - Navigation Whitelist

@@ -10,7 +10,7 @@ import Foundation
 /// JS → Native 메시지의 공통 구조
 /// - JSONDecoder로 디코딩하여 type, callback은 바로 타입 매핑
 /// - data는 AnyCodable로 보존 후, decodeData()로 핸들러별 타입으로 디코딩
-struct BridgeRequest: Decodable {
+nonisolated struct BridgeRequest: Decodable, Sendable {
     let type: BridgeMessageType
     let callback: String?
     let data: AnyCodable?
@@ -28,17 +28,17 @@ struct BridgeRequest: Decodable {
 // MARK: - 타입별 요청 데이터 모델
 
 /// greeting 요청의 data 구조
-struct GreetingRequestData: Decodable {
+nonisolated struct GreetingRequestData: Decodable, Sendable {
     let text: String
     let timestamp: String?
 }
 
 /// openUrl 요청의 data 구조
-struct OpenUrlRequestData: Decodable {
+nonisolated struct OpenUrlRequestData: Decodable, Sendable {
     let url: String
 }
 
 /// showToast 요청의 data 구조
-struct ShowToastRequestData: Decodable {
+nonisolated struct ShowToastRequestData: Decodable, Sendable {
     let message: String
 }

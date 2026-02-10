@@ -8,7 +8,7 @@
 import Testing
 @testable import webview
 
-struct BridgeHandlerTests {
+@MainActor struct BridgeHandlerTests {
 
     let handler = BridgeHandler()
 

@@ -13,7 +13,7 @@ import Combine
 // MARK: - Mock
 
 /// ViewModel이 sendToJS를 호출하는지 검증하기 위한 Mock
-final class MockBridgeMessageSender: BridgeMessageSender {
+@MainActor final class MockBridgeMessageSender: BridgeMessageSender {
     struct Call {
         let function: String?
         let success: Bool
@@ -31,7 +31,7 @@ final class MockBridgeMessageSender: BridgeMessageSender {
 
 // MARK: - Helper
 
-private func makeRequest(
+@MainActor private func makeRequest(
     type: String,
     callback: String? = "testCallback",
     data: [String: Any]? = nil
@@ -45,7 +45,7 @@ private func makeRequest(
 
 // MARK: - Tests
 
-struct WebViewViewModelTests {
+@MainActor struct WebViewViewModelTests {
 
     // MARK: - greeting
 

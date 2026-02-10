@@ -7,7 +7,7 @@
 
 import XCTest
 
-final class webviewUITests: XCTestCase {
+@MainActor final class webviewUITests: XCTestCase {
 
     var app: XCUIApplication!
     var webView: XCUIElement!
@@ -30,7 +30,7 @@ final class webviewUITests: XCTestCase {
     /// 실제 CSS 클리핑으로 화면에 보이지 않을 수 있다.
     /// swipeUp으로 CSS 스크롤을 실행하고 frame 위치 기반으로 노출을 확인한다.
     /// (좌표 기반 press-drag는 CSS overflow에 무효하므로 swipeUp 사용)
-    private func tapWebButton(_ label: String, file: StaticString = #file, line: UInt = #line) {
+    private func tapWebButton(_ label: String, file: StaticString = #filePath, line: UInt = #line) {
         let button = webView.buttons[label]
         XCTAssertTrue(button.waitForExistence(timeout: 5), "버튼을 찾지 못함: \(label)", file: file, line: line)
 
@@ -48,14 +48,14 @@ final class webviewUITests: XCTestCase {
     }
 
     /// WebView 로그 영역에 특정 텍스트가 나타날 때까지 대기
-    private func waitForLogText(containing text: String, timeout: TimeInterval = 5, file: StaticString = #file, line: UInt = #line) {
+    private func waitForLogText(containing text: String, timeout: TimeInterval = 5, file: StaticString = #filePath, line: UInt = #line) {
         let predicate = NSPredicate(format: "label CONTAINS %@", text)
         let element = webView.staticTexts.containing(predicate).firstMatch
         XCTAssertTrue(element.waitForExistence(timeout: timeout), "로그에 '\(text)' 텍스트가 나타나지 않음", file: file, line: line)
     }
 
     /// 원래 페이지(index.html) 타이틀이 사라지는지 확인 (페이지 이탈 검증)
-    private func assertPageNavigated(timeout: TimeInterval = 10, file: StaticString = #file, line: UInt = #line) {
+    private func assertPageNavigated(timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
         let originalTitle = webView.staticTexts["Native Bridge Sample"]
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"),
@@ -67,7 +67,6 @@ final class webviewUITests: XCTestCase {
 
     // MARK: - 앱 실행 & WebView 로딩
 
-    @MainActor
     func testAppLaunch_WebView가_정상_로딩된다() throws {
         let initLog = webView.staticTexts["Bridge 초기화 완료"]
         XCTAssertTrue(initLog.waitForExistence(timeout: 5), "Bridge 초기화 로그가 없음")
@@ -75,25 +74,21 @@ final class webviewUITests: XCTestCase {
 
     // MARK: - JS → Native Bridge 통신
 
-    @MainActor
     func testBridge_greeting_메시지_전송_및_응답() throws {
         tapWebButton("Native에 메시지 보내기")
         waitForLogText(containing: "수신")
     }
 
-    @MainActor
     func testBridge_getUserInfo_응답_수신() throws {
         tapWebButton("Native에서 데이터 요청")
         waitForLogText(containing: "차순혁")
     }
 
-    @MainActor
     func testBridge_getAppVersion_응답_수신() throws {
         tapWebButton("앱 버전 정보 요청")
         waitForLogText(containing: "앱 버전")
     }
 
-    @MainActor
     func testBridge_showToast_토스트_표시() throws {
         tapWebButton("Native 토스트 표시")
 
@@ -103,7 +98,6 @@ final class webviewUITests: XCTestCase {
         waitForLogText(containing: "토스트를 표시합니다")
     }
 
-    @MainActor
     func testBridge_unknownType_에러_응답() throws {
         tapWebButton("알 수 없는 Bridge 메시지 전송 (에러 테스트)")
         waitForLogText(containing: "요청을 처리할 수 없습니다")
@@ -111,14 +105,12 @@ final class webviewUITests: XCTestCase {
 
     // MARK: - Navigation 테스트
 
-    @MainActor
     func testNavigation_URL입력_이동() throws {
         // 기본값 https://www.apple.com 으로 이동
         tapWebButton("이동")
         assertPageNavigated()
     }
 
-    @MainActor
     func testNavigation_화이트리스트_미등록_도메인_차단_알럿() throws {
         tapWebButton("화이트리스트 미등록 도메인 (보안 테스트)")
 
@@ -131,7 +123,6 @@ final class webviewUITests: XCTestCase {
         alert.buttons["확인"].tap()
     }
 
-    @MainActor
     func testNavigation_존재하지않는_URL_에러_알럿() throws {
         tapWebButton("존재하지 않는 URL 로딩 (에러 테스트)")
 
@@ -141,7 +132,6 @@ final class webviewUITests: XCTestCase {
         alert.buttons["확인"].tap()
     }
 
-    @MainActor
     func testNavigation_HTTP404_에러_알럿() throws {
         tapWebButton("HTTP 404 응답 (navigationResponse 테스트)")
 
@@ -156,7 +146,6 @@ final class webviewUITests: XCTestCase {
 
     // MARK: - JS Dialog → Native Alert
 
-    @MainActor
     func testJSDialog_alert_네이티브_알럿으로_변환() throws {
         tapWebButton("alert() 테스트")
 
@@ -169,7 +158,6 @@ final class webviewUITests: XCTestCase {
         alert.buttons["확인"].tap()
     }
 
-    @MainActor
     func testJSDialog_confirm_확인_선택() throws {
         tapWebButton("confirm() 테스트")
 
@@ -181,7 +169,6 @@ final class webviewUITests: XCTestCase {
         waitForLogText(containing: "true")
     }
 
-    @MainActor
     func testJSDialog_confirm_취소_선택() throws {
         tapWebButton("confirm() 테스트")
 
@@ -193,7 +180,6 @@ final class webviewUITests: XCTestCase {
         waitForLogText(containing: "false")
     }
 
-    @MainActor
     func testJSDialog_prompt_입력_및_확인() throws {
         tapWebButton("prompt() 테스트")
 
@@ -207,7 +193,6 @@ final class webviewUITests: XCTestCase {
 
     // MARK: - 새 창/탭 테스트
 
-    @MainActor
     func testWindowOpen_모달_표시_및_닫기() throws {
         tapWebButton("window.open() 모달 (createWebViewWith)")
 
@@ -222,7 +207,6 @@ final class webviewUITests: XCTestCase {
         }
     }
 
-    @MainActor
     func testBridge_openUrl_네비게이션_Push() throws {
         tapWebButton("Bridge openUrl 푸시 (제스처 충돌 테스트)")
         assertPageNavigated()
@@ -230,7 +214,6 @@ final class webviewUITests: XCTestCase {
 
     // MARK: - 환경 정보
 
-    @MainActor
     func testUserAgent_커스텀_식별자_포함() throws {
         tapWebButton("User-Agent 확인")
         waitForLogText(containing: "webviewSample")
