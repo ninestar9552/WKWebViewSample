@@ -18,7 +18,8 @@ nonisolated struct BridgeResponse<T: Encodable & Sendable>: Encodable, Sendable 
 }
 
 /// data 없이 success + message만으로 응답하는 경우 (에러 응답 등)
-extension BridgeResponse where T == EmptyData {
+/// nonisolated: TCA의 Effect.run { } (nonisolated 컨텍스트)에서 호출되므로 명시 필요
+nonisolated extension BridgeResponse where T == EmptyData {
     init(success: Bool, message: String) {
         self.success = success
         self.message = message
