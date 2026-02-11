@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		E2A13A572F3C0E94002E5F92 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = E2B00002 /* ComposableArchitecture */; };
-		E2A13A582F3C0E94002E5F92 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = E2B00003 /* ComposableArchitecture */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,7 +77,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E2A13A582F3C0E94002E5F92 /* ComposableArchitecture in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,9 +153,6 @@
 				E2A44D062F26414F001DC5FA /* webviewTests */,
 			);
 			name = webviewTests;
-			packageProductDependencies = (
-				E2B00003 /* ComposableArchitecture */,
-			);
 			productName = webviewTests;
 			productReference = E2A44D032F26414F001DC5FA /* webviewTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -615,11 +610,6 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		E2B00002 /* ComposableArchitecture */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = E2B00001 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
-			productName = ComposableArchitecture;
-		};
-		E2B00003 /* ComposableArchitecture */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = E2B00001 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
 			productName = ComposableArchitecture;
