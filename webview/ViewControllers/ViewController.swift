@@ -8,10 +8,32 @@
 import UIKit
 import WebKit
 import Combine
+import ComposableArchitecture
+
+// ============================================================================
+// MARK: - MVVM vs TCA: ViewController 역할 변화
+// ============================================================================
+//
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │ MVVM (기존)                                                             │
+// │                                                                         │
+// │ let viewModel = WebViewViewModel()     ← ViewModel 직접 생성            │
+// │ viewModel.$loadProgress.sink { }       ← Combine으로 상태 구독          │
+// │ viewModel.handleError(error)           ← 메서드 직접 호출               │
+// │ viewModel.configure(bridgeHandler:)    ← 양방향 의존성 수동 연결         │
+// ├─────────────────────────────────────────────────────────────────────────┤
+// │ TCA (변환 후)                                                           │
+// │                                                                         │
+// │ let store: StoreOf<WebViewFeature>     ← Store 생성 (Reducer + State)   │
+// │ store.publisher.loadProgress.sink { }  ← 동일한 Combine 패턴            │
+// │ store.send(.errorOccurred(message))    ← 액션을 "보냄"                  │
+// │ bridgeClient = BridgeClient(...)       ← Dependency로 주입              │
+// └─────────────────────────────────────────────────────────────────────────┘
 
 /// WKWebView를 표시하고 로컬 HTML을 로딩하는 ViewController
 /// - Bridge 통신 로직은 BridgeHandler에 위임하여 ViewController는 화면 구성에만 집중
-/// - ViewModel의 @Published 상태를 Combine으로 구독하여 UI를 업데이트
+/// - MVVM: ViewModel의 @Published 상태를 Combine으로 구독
+/// - TCA: Store의 publisher를 Combine으로 구독 (동일한 패턴)
 /// - 팝업 모드: createWebViewWith에서 전달받은 configuration으로 생성되어 새 창으로 표시
 final class ViewController: UIViewController {
 
@@ -20,9 +42,38 @@ final class ViewController: UIViewController {
     /// Bridge 통신을 전담하는 핸들러 객체
     private let bridgeHandler = BridgeHandler()
 
-    /// 비즈니스 로직과 상태를 관리하는 ViewModel
-    /// - Delegate extension 파일에서 viewModel.handleError() 접근을 위해 internal
-    let viewModel = WebViewViewModel()
+    /// TCA Store — 비즈니스 로직과 상태를 관리
+    /// - MVVM: let viewModel = WebViewViewModel()
+    /// - TCA: Store<WebViewFeature.State, WebViewFeature.Action>
+    ///
+    /// lazy 이유: BridgeClient에 bridgeHandler.sendRawJS를 연결해야 하므로
+    /// bridgeHandler가 먼저 초기화된 후 Store를 생성
+    private(set) lazy var store: StoreOf<WebViewFeature> = {
+        /// bridgeHandler를 로컬 변수로 캡처하여 @Sendable 클로저에서 사용
+        /// - [weak self]로 캡처하면 "reference to captured var 'self'" 에러 발생
+        /// - class 타입이므로 weak 캡처 가능
+        let handler = self.bridgeHandler
+        return Store(initialState: WebViewFeature.State()) {
+            WebViewFeature()
+        } withDependencies: {
+            /// BridgeClient의 실제 구현을 BridgeHandler에 연결
+            /// - MVVM: viewModel.configure(bridgeHandler: bridgeHandler)
+            /// - TCA: Dependency로 주입 — sendRawJS 클로저가 bridgeHandler를 캡처
+            ///
+            /// Task { @MainActor in } 이유:
+            /// - BridgeHandler.sendRawJS는 MainActor에 격리됨 (WKScriptMessageHandler 채택)
+            /// - BridgeClient.sendRawJS는 @Sendable 클로저 (Effect.run의 nonisolated 컨텍스트에서 호출)
+            /// - nonisolated → MainActor 호출이므로 Task로 디스패치 필요
+            $0.bridgeClient = BridgeClient(sendRawJS: { [weak handler] function, jsonString in
+                Task { @MainActor in
+                    handler?.sendRawJS(function: function, jsonString: jsonString)
+                }
+            })
+        }
+    }()
+
+    /// Combine 구독 저장소
+    /// - MVVM/TCA 모두 Combine .sink를 사용하므로 그대로 유지
     var cancellables = Set<AnyCancellable>()
 
     /// WebView 인스턴스 (createWebViewWith에서 반환해야 하므로 internal 접근)
@@ -199,14 +250,11 @@ final class ViewController: UIViewController {
     }
 
     /// Custom User-Agent 설정
-    /// - 기본 User-Agent 뒤에 앱 정보를 추가하여 서버/웹에서 앱 환경을 식별할 수 있도록 함
-    /// - 웹 프론트엔드에서 navigator.userAgent로 네이티브 앱 여부를 판별하여 Bridge 호출 분기에 사용
     private func configureUserAgent() {
         let device = UIDevice.current
         let customAgent = "webviewSample/\(Bundle.main.appVersion) iOS/\(device.systemVersion) \(device.modelIdentifier)"
 
         webView.customUserAgent = nil
-        /// completion handler → async/await 전환 (Swift 6 Sendable 클로저 요구사항 해결)
         Task { [weak self] in
             guard let self else { return }
             if let defaultAgent = try? await webView.evaluateJavaScript("navigator.userAgent") as? String {
@@ -216,16 +264,10 @@ final class ViewController: UIViewController {
     }
 
     private func configureWebViewAppearance() {
-        /// 스크롤 시 키보드 자동 숨김 (입력 폼이 있는 웹뷰에서 유용)
         webView.scrollView.keyboardDismissMode = .onDrag
-        /// WebView 배경색을 뷰와 동일하게 맞춤 (로딩 시 흰색 깜빡임 방지)
         webView.isOpaque = false
         webView.backgroundColor = .clear
-        /// pull-to-refresh 등 over scroll 시 배경이 보이지 않도록 bounce 비활성화
         webView.scrollView.bounces = false
-
-        /// 스와이프로 웹 히스토리 앞/뒤 이동 허용
-        /// - WebView에 히스토리가 없으면 자동으로 Navigation pop 제스처가 작동
         webView.allowsBackForwardNavigationGestures = true
 
         #if DEBUG
@@ -235,9 +277,19 @@ final class ViewController: UIViewController {
         #endif
     }
 
+    /// 의존성 연결
+    /// - MVVM: bridgeHandler ↔ viewModel 양방향 참조 설정
+    /// - TCA: bridgeHandler에 WebView만 주입 + onMessageReceived로 Store 연결
+    ///   (BridgeClient → bridgeHandler 연결은 Store 생성 시 withDependencies에서 처리)
     private func configureDependencies() {
-        bridgeHandler.configure(webView: webView, viewModel: viewModel)
-        viewModel.configure(bridgeHandler: bridgeHandler)
+        bridgeHandler.configure(webView: webView)
+
+        /// BridgeHandler가 메시지를 수신하면 Store에 액션으로 전달
+        /// - MVVM: bridgeHandler → viewModel.handleBridgeMessage(request)
+        /// - TCA: bridgeHandler → store.send(.bridgeMessageReceived(request))
+        bridgeHandler.onMessageReceived = { [weak self] request in
+            self?.store.send(.bridgeMessageReceived(request))
+        }
     }
 
     // MARK: - Load HTML

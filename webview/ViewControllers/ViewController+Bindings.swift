@@ -9,7 +9,34 @@ import UIKit
 import WebKit
 import Combine
 
-/// ViewModel ↔ ViewController Combine 바인딩
+// ============================================================================
+// MARK: - MVVM vs TCA: 바인딩 방식 비교
+// ============================================================================
+//
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │ MVVM (기존)                                                             │
+// │                                                                         │
+// │ viewModel.$loadProgress.sink { }    ← @Published Combine 구독          │
+// │ viewModel.$error.sink { }           ← @Event (PassthroughSubject) 구독  │
+// │ viewModel.$urlToOpen.sink { }       ← @Event 구독                       │
+// │ viewModel.$toastMessage.sink { }    ← @Event 구독                       │
+// ├─────────────────────────────────────────────────────────────────────────┤
+// │ TCA (변환 후)                                                           │
+// │                                                                         │
+// │ store.publisher.loadProgress.sink { }   ← Store publisher 구독          │
+// │ store.publisher.errorMessage.sink { }   ← Store publisher 구독          │
+// │ store.publisher.urlToOpen.sink { }      ← Store publisher 구독          │
+// │ store.publisher.toastMessage.sink { }   ← Store publisher 구독          │
+// │                                                                         │
+// │ 차이점:                                                                  │
+// │ - @Event는 한 번 전달 후 자동 소비 (PassthroughSubject)                   │
+// │ - TCA는 Optional State로 유지 → UI 처리 후 소비 Action을 보내야 함       │
+// │   예: store.send(.errorDismissed) → state.errorMessage = nil            │
+// └─────────────────────────────────────────────────────────────────────────┘
+
+/// Store ↔ ViewController Combine 바인딩
+/// - MVVM: ViewModel의 @Published/@Event를 Combine .sink로 구독
+/// - TCA: Store의 publisher를 Combine .sink로 구독 (패턴이 거의 동일)
 extension ViewController {
 
     // MARK: - Setup Bindings
@@ -24,15 +51,23 @@ extension ViewController {
 
     // MARK: - Progress
 
-    /// KVO 퍼블리셔로 WebView의 estimatedProgress를 관찰하여 ViewModel에 전달
+    /// KVO 퍼블리셔로 WebView의 estimatedProgress를 관찰하여 Store에 전달
+    /// - MVVM: webView KVO → viewModel.updateLoadProgress()
+    /// - TCA: webView KVO → store.send(.progressUpdated())
     private func bindProgress() {
-        // WebView → ViewModel
+        // WebView → Store
+        /// MVVM: webView.publisher(for: \.estimatedProgress)
+        ///           .sink { self?.viewModel.updateLoadProgress($0) }
+        /// TCA:  webView.publisher(for: \.estimatedProgress)
+        ///           .sink { self?.store.send(.progressUpdated($0)) }
         webView.publisher(for: \.estimatedProgress)
-            .sink { [weak self] in self?.viewModel.updateLoadProgress($0) }
+            .sink { [weak self] in self?.store.send(.progressUpdated($0)) }
             .store(in: &cancellables)
 
-        // ViewModel → UI
-        viewModel.$loadProgress
+        // Store → UI
+        /// MVVM: viewModel.$loadProgress.sink { self?.updateProgressView(progress: $0) }
+        /// TCA:  store.publisher.loadProgress.sink { self?.updateProgressView(progress: $0) }
+        store.publisher.loadProgress
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.updateProgressView(progress: $0) }
             .store(in: &cancellables)
@@ -71,35 +106,48 @@ extension ViewController {
 
     // MARK: - Error
 
+    /// 에러 메시지를 구독하여 알럿 표시
+    /// - MVVM: @Event var error → PassthroughSubject → 자동 소비 (한 번만 전달)
+    /// - TCA: Optional State → 알럿 표시 후 .errorDismissed 액션으로 nil 초기화
     private func bindError() {
-        viewModel.$error
+        store.publisher.errorMessage
             .receive(on: DispatchQueue.main)
             .compactMap { $0 }
-            .sink { [weak self] error in
-                self?.showErrorAlert(error)
+            .sink { [weak self] message in
+                self?.showErrorAlert(message)
             }
             .store(in: &cancellables)
     }
 
     // MARK: - Open URL
 
+    /// URL 열기 이벤트를 구독하여 새 화면으로 push
+    /// - MVVM: @Event var urlToOpen → PassthroughSubject → 자동 소비
+    /// - TCA: Optional State → push 후 .urlOpened 액션으로 nil 초기화
     private func bindOpenUrl() {
-        viewModel.$urlToOpen
+        store.publisher.urlToOpen
             .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
             .sink { [weak self] url in
                 let webVC = ViewController(url: url)
                 self?.navigationController?.pushViewController(webVC, animated: true)
+                self?.store.send(.urlOpened)
             }
             .store(in: &cancellables)
     }
 
     // MARK: - Toast
 
+    /// 토스트 메시지를 구독하여 토스트 표시
+    /// - MVVM: @Event var toastMessage → PassthroughSubject → 자동 소비
+    /// - TCA: Optional State → 토스트 표시 후 .toastShown 액션으로 nil 초기화
     private func bindToast() {
-        viewModel.$toastMessage
+        store.publisher.toastMessage
             .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
             .sink { [weak self] message in
                 self?.showToast(message)
+                self?.store.send(.toastShown)
             }
             .store(in: &cancellables)
     }
@@ -169,13 +217,22 @@ extension ViewController {
 
     // MARK: - Error Alert
 
-    private func showErrorAlert(_ error: Error) {
+    /// 에러 알럿 표시
+    /// - MVVM: Error 객체를 받아서 localizedDescription 표시
+    /// - TCA: 이미 String으로 변환된 에러 메시지를 받아서 표시
+    ///   알럿 dismiss 후 store.send(.errorDismissed)로 상태 초기화
+    private func showErrorAlert(_ message: String) {
         let alert = UIAlertController(
             title: "오류",
-            message: error.localizedDescription,
+            message: message,
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self] _ in
+            /// TCA에서 추가된 부분: 알럿이 닫힌 후 상태를 초기화
+            /// - MVVM: @Event는 PassthroughSubject라 자동으로 소비되어 별도 처리 불필요
+            /// - TCA: State에 값이 남아있으므로 명시적으로 nil로 초기화해야 함
+            self?.store.send(.errorDismissed)
+        })
         present(alert, animated: true)
     }
 }
