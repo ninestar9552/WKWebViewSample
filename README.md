@@ -1,18 +1,21 @@
 # iOS WebView Bridge Sample
 
 WKWebView 기반의 하이브리드 앱 아키텍처 샘플 프로젝트입니다.
-**MVVM + Combine** 패턴을 적용하여 Native ↔ JavaScript 간 양방향 통신을 구현했습니다.
+**TCA (The Composable Architecture)** 패턴을 적용하여 Native ↔ JavaScript 간 양방향 통신을 구현했습니다.
+
+> 원래 MVVM + Combine으로 구현된 프로젝트를 TCA로 변환하였으며,
+> 코드 내 주석에 MVVM 대비 TCA에서 무엇이 달라졌는지 상세히 비교해 두었습니다.
 
 ## 주요 기능
 
 | 기능 | 설명 |
 |------|------|
 | **Bridge 통신** | JS ↔ Native 양방향 메시지 전달 (postMessage / evaluateJavaScript) |
-| **MVVM + Combine** | ViewModel의 @Published 상태를 Combine으로 UI에 바인딩 |
+| **TCA** | Reducer로 상태 관리, Effect로 사이드 이펙트 분리, Dependency로 의존성 주입 |
 | **도메인 화이트리스트** | 허용된 도메인만 로딩, 미등록 도메인 차단 |
 | **window.open 처리** | 새 창 요청 시 모달로 ViewController 표시 |
 | **백화현상 복구** | WebContent 프로세스 종료 시 자동 복구 |
-| **프로그레스바** | KVO estimatedProgress를 Combine으로 바인딩 |
+| **프로그레스바** | KVO estimatedProgress를 Store publisher로 바인딩 |
 | **JS Dialog** | alert, confirm, prompt를 Native UIAlertController로 변환 |
 
 ## 아키텍처
@@ -27,22 +30,24 @@ WKWebView 기반의 하이브리드 앱 아키텍처 샘플 프로젝트입니�
 ┌─────────────────────────────────────────────────────────────────┐
 │                       BridgeHandler                             │
 │              • WKScriptMessageHandler 구현                       │
-│              • 메시지 파싱 및 라우팅                                 │
-│              • sendToJS()로 응답 전송                              │
+│              • 메시지 파싱 (JSON → BridgeRequest)                  │
+│              • sendRawJS()로 응답 전송                             │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ viewModel.handleBridgeMessage()
+                           │ onMessageReceived?(request)
+                           │ → store.send(.bridgeMessageReceived)
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     WebViewViewModel                            │
-│              • @Published: loadProgress, error                  │
-│              • @Event: urlToOpen, toastMessage                  │
-│              • 비즈니스 로직 처리                                   │
+│                   WebViewFeature (Reducer)                       │
+│              • State: loadProgress, errorMessage,               │
+│                       urlToOpen, toastMessage                   │
+│              • Action → State 변경 + Effect 반환                  │
+│              • BridgeClient Dependency로 JS 응답 전송             │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ Combine ($published)
+                           │ store.publisher (Combine)
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      ViewController                             │
-│              • setupBindings()로 상태 구독                         │
+│              • setupBindings()로 Store 상태 구독                   │
 │              • UI 업데이트 (프로그레스바, 토스트, 알럿)                  │
 │              • WKNavigationDelegate, WKUIDelegate               │
 └─────────────────────────────────────────────────────────────────┘
@@ -63,12 +68,15 @@ webview/
 │   ├── BridgeResponse.swift       # Native → JS 응답 모델
 │   └── AnyCodable.swift           # 동적 JSON 디코딩 유틸
 │
-├── ViewModels/
-│   └── WebViewViewModel.swift     # 비즈니스 로직 + 상태 관리
+├── Features/
+│   └── WebViewFeature.swift       # TCA Reducer (상태 + 액션 + 로직)
+│
+├── Dependencies/
+│   └── BridgeClient.swift         # TCA Dependency (JS 응답 전송)
 │
 ├── ViewControllers/
 │   ├── ViewController.swift                    # 메인 WebView 화면
-│   ├── ViewController+Bindings.swift           # Combine 바인딩
+│   ├── ViewController+Bindings.swift           # Store ↔ UI 바인딩
 │   ├── ViewController+WKNavigationDelegate.swift
 │   └── ViewController+WKUIDelegate.swift
 │
@@ -77,9 +85,6 @@ webview/
 │
 ├── Config/
 │   └── SecurityConfig.swift       # 도메인 화이트리스트 설정
-│
-├── Utils/
-│   └── Event.swift                # @Event 프로퍼티 래퍼 (일회성 이벤트)
 │
 ├── Extensions/
 │   ├── Bundle+AppInfo.swift       # 앱 버전 정보
@@ -101,16 +106,25 @@ webview/
 [BridgeHandler] userContentController(didReceive:)
          │ JSONDecoder → BridgeRequest
          ▼
-[ViewModel] handleBridgeMessage() → handleShowToast()
-         │ toastMessage = "Hello"  (@Event)
+[BridgeHandler] onMessageReceived?(request)
+         │
          ▼
-[ViewController] bindToast() sink → showToast() UI 표시
+[Store] .bridgeMessageReceived(request) → Reducer에서 처리
+         │ state.toastMessage = "Hello"
+         ▼
+[ViewController] store.publisher.toastMessage.sink → showToast() UI 표시
+         │
+         ▼
+[ViewController] store.send(.toastShown) → state.toastMessage = nil
 ```
 
 ### Native → JS 응답
 
 ```
-[ViewModel] bridgeHandler.sendToJS(function: "callback", response: ...)
+[Reducer] return .run { bridgeClient.send(function: "callback", response: ...) }
+         │
+         ▼
+[BridgeClient] sendRawJS(function, jsonString)  ← Dependency 클로저
          │
          ▼
 [BridgeHandler] webView.evaluateJavaScript("callback({...})")
@@ -155,29 +169,66 @@ webview/
 
 ## 기술 스택
 
-- **iOS 15.0+**
-- **Swift 6**
+- **iOS 16.0+**
+- **Swift 6** (SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor)
 - **WKWebView** (WebKit)
-- **Combine** (Reactive 바인딩)
-- **MVVM** 아키텍처
+- **TCA** (The Composable Architecture)
+- **Combine** (Store publisher 바인딩)
 
 ## 주요 구현 포인트
 
-### @Event 프로퍼티 래퍼
+### TCA + Swift 6 actor isolation
 
-일회성 이벤트를 위한 커스텀 프로퍼티 래퍼입니다.
-`@Published`와 동일한 문법으로 `PassthroughSubject`를 사용합니다.
+이 프로젝트는 `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` 설정을 사용합니다.
+TCA의 `@Reducer`, `@DependencyClient` 매크로가 생성하는 코드가 MainActor에 묶여
+`Effect.run`(nonisolated 컨텍스트)과 충돌하므로, 매크로 없이 수동 구현합니다.
 
 ```swift
-// 정의
-@Event var toastMessage: String
+// 매크로 대신 nonisolated + Reducer 프로토콜 직접 채택
+nonisolated struct WebViewFeature: Reducer { ... }
+nonisolated struct BridgeClient: Sendable { ... }
+```
 
-// 이벤트 발행 (write-only)
-toastMessage = "Hello"
+### 일회성 이벤트 처리 (MVVM @Event → TCA Optional State)
 
-// 구독
-viewModel.$toastMessage
-    .sink { message in ... }
+MVVM의 `@Event`(PassthroughSubject)는 한 번 전달 후 자동 소비됩니다.
+TCA에서는 Optional State로 유지하고, UI 처리 후 소비 Action을 보내 nil로 초기화합니다.
+
+```swift
+// State
+var toastMessage: String? = nil
+
+// Reducer: 이벤트 발생
+state.toastMessage = "저장되었습니다"
+
+// ViewController: UI 처리 후 소비
+store.publisher.toastMessage
+    .compactMap { $0 }
+    .sink { [weak self] message in
+        self?.showToast(message)
+        self?.store.send(.toastShown)  // → state.toastMessage = nil
+    }
+```
+
+### WKWebView Bridge Retain Cycle 방지
+
+`userContentController.add(handler:)`가 handler를 strong 참조하므로,
+ViewController가 아닌 별도 BridgeHandler 객체를 등록하여 순환 참조를 차단합니다.
+
+```swift
+// ViewController → webView → userContentController → bridgeHandler (별도 객체)
+// bridgeHandler → ViewController: [weak self]로 참조 → 순환 없음
+bridgeHandler.onMessageReceived = { [weak self] request in
+    self?.store.send(.bridgeMessageReceived(request))
+}
+
+// deinit에서 명시적 제거
+deinit {
+    MainActor.assumeIsolated {
+        webView?.configuration.userContentController
+            .removeScriptMessageHandler(forName: BridgeHandler.handlerName)
+    }
+}
 ```
 
 ### 백화현상 복구
@@ -186,12 +237,10 @@ WKWebView의 WebContent 프로세스가 메모리 부족으로 종료되면 흰 
 `didBecomeActiveNotification`을 구독하여 앱 복귀 시 자동으로 마지막 URL을 재로딩합니다.
 
 ```swift
-// 프로세스 종료 감지
 func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
     needsReload = true
 }
 
-// 앱 활성화 시 복구
 NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
     .sink { [weak self] _ in
         if self?.needsReload == true {
