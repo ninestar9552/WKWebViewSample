@@ -50,23 +50,25 @@ import ComposableArchitecture
 // MARK: - Helper
 
 /// BridgeRequest를 딕셔너리로부터 생성하는 헬퍼
-/// - MVVM/TCA 모두 동일한 BridgeRequest를 사용하므로 헬퍼도 동일
+/// - Callback 기반: makeRequest(type:callback:data:)
+/// - RPC 기반: makeRequest(method:id:params:)
 @MainActor private func makeRequest(
-    type: String,
-    callback: String? = "testCallback",
-    data: [String: Any]? = nil
+    method: String,
+    id: String = "test-uuid",
+    params: [String: Any]? = nil
 ) -> BridgeRequest? {
-    var dict: [String: Any] = ["type": type]
-    if let callback { dict["callback"] = callback }
-    if let data { dict["data"] = data }
+    var dict: [String: Any] = ["id": id, "method": method]
+    if let params { dict["params"] = params }
     guard let jsonData = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
     return try? JSONDecoder().decode(BridgeRequest.self, from: jsonData)
 }
 
-/// sendRawJS 호출을 기록하는 타입 별칭
-/// - MVVM: MockBridgeMessageSender.calls 배열
-/// - TCA: LockIsolated로 래핑하여 @Sendable 클로저에서도 안전하게 기록
-private typealias SentCall = (function: String?, jsonString: String)
+/// sendRawJS로 전송된 Data를 딕셔너리로 디코딩하는 헬퍼
+/// - Callback 기반: jsonString.contains("\"success\":true") 문자열 검색
+/// - RPC 기반: Data → Dictionary로 디코딩하여 result/error 키로 구조적 검증
+private func decodeResponse(_ data: Data) -> [String: Any]? {
+    try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+}
 
 // MARK: - Tests
 
@@ -80,96 +82,99 @@ private typealias SentCall = (function: String?, jsonString: String)
     /// vm.configure(bridgeHandler: mock)
     /// vm.handleBridgeMessage(request)
     /// #expect(mock.lastCall?.success == true)
-    @Test func greeting_유효한_데이터_success_응답() async {
+    @Test func greeting_유효한_데이터_result_응답() async {
         /// LockIsolated: swift-dependencies 제공 스레드 안전 래퍼
         /// - MVVM: var calls 배열에 직접 기록 (단일 스레드)
         /// - TCA: BridgeClient.sendRawJS가 @Sendable이므로 LockIsolated 필요
         ///   Swift 6 strict concurrency에서 var 캡처가 금지되기 때문
-        let sentCalls = LockIsolated<[SentCall]>([])
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
             /// MVVM: Mock 클래스의 sendToJS가 calls 배열에 기록
             /// TCA: BridgeClient.sendRawJS 클로저에서 직접 기록 — Mock 클래스 불필요
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "greeting", data: ["text": "Hello", "timestamp": "2026-02-07"])!
+        let request = makeRequest(method: "greeting", params: ["text": "Hello", "timestamp": "2026-02-07"])!
 
         /// MVVM: vm.handleBridgeMessage(request)
         /// TCA: store.send(.bridgeMessageReceived(request))
         /// → 상태 변경이 없으면 클로저 생략 가능
         await store.send(.bridgeMessageReceived(request))
 
-        /// Effect(bridgeClient.send)가 완료될 때까지 대기
-        /// - MVVM에서는 Mock의 calls 배열을 바로 확인했지만
-        /// - TCA에서는 Effect가 비동기이므로 완료를 기다려야 함
-        /// - exhaustivity: .off → Effect가 추가 액션을 보내지 않으므로 생략 가능
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].function == "testCallback")
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":true"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        #expect(response?["id"] as? String == "test-uuid")
+        #expect(response?["result"] != nil)
+        #expect(response?["error"] == nil)
     }
 
-    @Test func greeting_데이터_없음_failure_응답() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+    @Test func greeting_데이터_없음_error_응답() async {
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "greeting")!
+        let request = makeRequest(method: "greeting")!
         await store.send(.bridgeMessageReceived(request))
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":false"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        #expect(response?["id"] as? String == "test-uuid")
+        let error = response?["error"] as? [String: Any]
+        #expect(error?["code"] as? String == "INVALID_PARAMS")
     }
 
     // MARK: - getUserInfo
 
-    @Test func getUserInfo_success_응답() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+    @Test func getUserInfo_result_응답() async {
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "getUserInfo")!
+        let request = makeRequest(method: "getUserInfo")!
         await store.send(.bridgeMessageReceived(request))
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].function == "testCallback")
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":true"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        #expect(response?["id"] as? String == "test-uuid")
+        #expect(response?["result"] != nil)
     }
 
     // MARK: - getAppVersion
 
-    @Test func getAppVersion_success_응답() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+    @Test func getAppVersion_result_응답() async {
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "getAppVersion")!
+        let request = makeRequest(method: "getAppVersion")!
         await store.send(.bridgeMessageReceived(request))
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":true"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        #expect(response?["result"] != nil)
     }
 
     // MARK: - openUrl
@@ -181,17 +186,17 @@ private typealias SentCall = (function: String?, jsonString: String)
     ///
     /// TCA: store.send 클로저에서 예상 상태 변경을 선언적으로 검증
     @Test func openUrl_유효한_URL_상태_변경() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "openUrl", data: ["url": "https://www.apple.com"])!
+        let request = makeRequest(method: "openUrl", params: ["url": "https://www.apple.com"])!
 
         /// TCA의 핵심: send 클로저에서 "이 액션이 State를 이렇게 바꿔야 한다"를 선언
         /// - MVVM: Combine .sink로 받은 값을 수동 비교
@@ -200,85 +205,95 @@ private typealias SentCall = (function: String?, jsonString: String)
             $0.urlToOpen = URL(string: "https://www.apple.com")
         }
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":true"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        #expect(response?["result"] != nil)
+        #expect(response?["error"] == nil)
     }
 
-    @Test func openUrl_잘못된_URL_failure_응답() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+    @Test func openUrl_잘못된_URL_error_응답() async {
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "openUrl", data: ["url": ""])!
+        let request = makeRequest(method: "openUrl", params: ["url": ""])!
         await store.send(.bridgeMessageReceived(request))
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":false"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        let error = response?["error"] as? [String: Any]
+        #expect(error?["code"] as? String == "INVALID_PARAMS")
     }
 
-    @Test func openUrl_데이터_없음_failure_응답() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+    @Test func openUrl_데이터_없음_error_응답() async {
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "openUrl")!
+        let request = makeRequest(method: "openUrl")!
         await store.send(.bridgeMessageReceived(request))
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":false"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        let error = response?["error"] as? [String: Any]
+        #expect(error?["code"] as? String == "INVALID_PARAMS")
     }
 
     // MARK: - showToast
 
     @Test func showToast_유효한_메시지_상태_변경() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "showToast", data: ["message": "저장되었습니다"])!
+        let request = makeRequest(method: "showToast", params: ["message": "저장되었습니다"])!
 
         await store.send(.bridgeMessageReceived(request)) {
             $0.toastMessage = "저장되었습니다"
         }
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":true"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        #expect(response?["result"] != nil)
+        #expect(response?["error"] == nil)
     }
 
-    @Test func showToast_데이터_없음_failure_응답() async {
-        let sentCalls = LockIsolated<[SentCall]>([])
+    @Test func showToast_데이터_없음_error_응답() async {
+        let sentData = LockIsolated<[Data]>([])
 
         let store = TestStore(initialState: WebViewFeature.State()) {
             WebViewFeature()
         } withDependencies: {
-            $0.bridgeClient = BridgeClient(sendRawJS: { function, jsonString in
-                sentCalls.withValue { $0.append((function, jsonString)) }
+            $0.bridgeClient = BridgeClient(sendRawJS: { jsonData in
+                sentData.withValue { $0.append(jsonData) }
             })
         }
 
-        let request = makeRequest(type: "showToast")!
+        let request = makeRequest(method: "showToast")!
         await store.send(.bridgeMessageReceived(request))
 
-        #expect(sentCalls.value.count == 1)
-        #expect(sentCalls.value[0].jsonString.contains("\"success\":false"))
+        #expect(sentData.value.count == 1)
+        let response = decodeResponse(sentData.value[0])
+        let error = response?["error"] as? [String: Any]
+        #expect(error?["code"] as? String == "INVALID_PARAMS")
     }
 
     // MARK: - Loading State

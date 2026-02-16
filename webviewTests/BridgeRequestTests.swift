@@ -23,157 +23,157 @@ struct BridgeRequestTests {
 
     @Test func greeting_요청_디코딩() {
         let dict: [String: Any] = [
-            "type": "greeting",
-            "callback": "receiveMessageFromNative",
-            "data": ["text": "Hello", "timestamp": "2026-02-07"]
+            "id": "test-uuid",
+            "method": "greeting",
+            "params": ["text": "Hello", "timestamp": "2026-02-07"]
         ]
 
         let request = decode(dict)
         #expect(request != nil)
-        #expect(request?.type == .greeting)
-        #expect(request?.callback == "receiveMessageFromNative")
+        #expect(request?.id == "test-uuid")
+        #expect(request?.method == .greeting)
     }
 
     @Test func openUrl_요청_디코딩() {
         let dict: [String: Any] = [
-            "type": "openUrl",
-            "callback": "receiveOpenUrlResponse",
-            "data": ["url": "https://www.apple.com"]
+            "id": "test-uuid",
+            "method": "openUrl",
+            "params": ["url": "https://www.apple.com"]
         ]
 
         let request = decode(dict)
         #expect(request != nil)
-        #expect(request?.type == .openUrl)
+        #expect(request?.method == .openUrl)
     }
 
     @Test func showToast_요청_디코딩() {
         let dict: [String: Any] = [
-            "type": "showToast",
-            "callback": "receiveToastResponse",
-            "data": ["message": "저장되었습니다"]
+            "id": "test-uuid",
+            "method": "showToast",
+            "params": ["message": "저장되었습니다"]
         ]
 
         let request = decode(dict)
         #expect(request != nil)
-        #expect(request?.type == .showToast)
+        #expect(request?.method == .showToast)
     }
 
-    @Test func callback_없는_요청_디코딩() {
+    @Test func params_없는_요청_디코딩() {
         let dict: [String: Any] = [
-            "type": "getUserInfo"
+            "id": "test-uuid",
+            "method": "getUserInfo"
         ]
 
         let request = decode(dict)
         #expect(request != nil)
-        #expect(request?.type == .getUserInfo)
-        #expect(request?.callback == nil)
-    }
-
-    @Test func data_없는_요청_디코딩() {
-        let dict: [String: Any] = [
-            "type": "getAppVersion",
-            "callback": "receiveAppVersion"
-        ]
-
-        let request = decode(dict)
-        #expect(request != nil)
-        #expect(request?.data == nil)
+        #expect(request?.method == .getUserInfo)
+        #expect(request?.params == nil)
     }
 
     // MARK: - 실패 케이스
 
-    @Test func 알수없는_type_디코딩_실패() {
+    @Test func 알수없는_method_디코딩_실패() {
         let dict: [String: Any] = [
-            "type": "unknownType",
-            "callback": "someCallback"
+            "id": "test-uuid",
+            "method": "unknownType"
         ]
 
         let request = decode(dict)
         #expect(request == nil)
     }
 
-    @Test func type_누락_시_디코딩_실패() {
+    @Test func method_누락_시_디코딩_실패() {
         let dict: [String: Any] = [
-            "callback": "someCallback",
-            "data": ["text": "Hello"]
+            "id": "test-uuid",
+            "params": ["text": "Hello"]
         ]
 
         let request = decode(dict)
         #expect(request == nil)
     }
 
-    // MARK: - decodeData<T>
-
-    @Test func decodeData_GreetingRequestData_성공() {
+    @Test func id_누락_시_디코딩_실패() {
         let dict: [String: Any] = [
-            "type": "greeting",
-            "callback": "cb",
-            "data": ["text": "Hello", "timestamp": "2026-02-07"]
+            "method": "greeting",
+            "params": ["text": "Hello"]
         ]
 
         let request = decode(dict)
-        let data = request?.decodeData(GreetingRequestData.self)
+        #expect(request == nil)
+    }
+
+    // MARK: - decodeParams<T>
+
+    @Test func decodeParams_GreetingRequestData_성공() {
+        let dict: [String: Any] = [
+            "id": "test-uuid",
+            "method": "greeting",
+            "params": ["text": "Hello", "timestamp": "2026-02-07"]
+        ]
+
+        let request = decode(dict)
+        let data = request?.decodeParams(GreetingRequestData.self)
         #expect(data != nil)
         #expect(data?.text == "Hello")
         #expect(data?.timestamp == "2026-02-07")
     }
 
-    @Test func decodeData_OpenUrlRequestData_성공() {
+    @Test func decodeParams_OpenUrlRequestData_성공() {
         let dict: [String: Any] = [
-            "type": "openUrl",
-            "callback": "cb",
-            "data": ["url": "https://www.apple.com"]
+            "id": "test-uuid",
+            "method": "openUrl",
+            "params": ["url": "https://www.apple.com"]
         ]
 
         let request = decode(dict)
-        let data = request?.decodeData(OpenUrlRequestData.self)
+        let data = request?.decodeParams(OpenUrlRequestData.self)
         #expect(data?.url == "https://www.apple.com")
     }
 
-    @Test func decodeData_ShowToastRequestData_성공() {
+    @Test func decodeParams_ShowToastRequestData_성공() {
         let dict: [String: Any] = [
-            "type": "showToast",
-            "callback": "cb",
-            "data": ["message": "테스트"]
+            "id": "test-uuid",
+            "method": "showToast",
+            "params": ["message": "테스트"]
         ]
 
         let request = decode(dict)
-        let data = request?.decodeData(ShowToastRequestData.self)
+        let data = request?.decodeParams(ShowToastRequestData.self)
         #expect(data?.message == "테스트")
     }
 
-    @Test func decodeData_타입_불일치_시_nil_반환() {
+    @Test func decodeParams_타입_불일치_시_nil_반환() {
         let dict: [String: Any] = [
-            "type": "greeting",
-            "callback": "cb",
-            "data": ["url": "https://example.com"]  // GreetingRequestData에는 text가 필요
+            "id": "test-uuid",
+            "method": "greeting",
+            "params": ["url": "https://example.com"]  // GreetingRequestData에는 text가 필요
         ]
 
         let request = decode(dict)
-        let data = request?.decodeData(GreetingRequestData.self)
+        let data = request?.decodeParams(GreetingRequestData.self)
         #expect(data == nil)
     }
 
-    @Test func decodeData_data가_nil일때_nil_반환() {
+    @Test func decodeParams_params가_nil일때_nil_반환() {
         let dict: [String: Any] = [
-            "type": "getUserInfo",
-            "callback": "cb"
+            "id": "test-uuid",
+            "method": "getUserInfo"
         ]
 
         let request = decode(dict)
-        let data = request?.decodeData(GreetingRequestData.self)
+        let data = request?.decodeParams(GreetingRequestData.self)
         #expect(data == nil)
     }
 
-    @Test func decodeData_timestamp_생략_가능() {
+    @Test func decodeParams_timestamp_생략_가능() {
         let dict: [String: Any] = [
-            "type": "greeting",
-            "callback": "cb",
-            "data": ["text": "Hello"]  // timestamp 없음 (Optional)
+            "id": "test-uuid",
+            "method": "greeting",
+            "params": ["text": "Hello"]  // timestamp 없음 (Optional)
         ]
 
         let request = decode(dict)
-        let data = request?.decodeData(GreetingRequestData.self)
+        let data = request?.decodeParams(GreetingRequestData.self)
         #expect(data != nil)
         #expect(data?.text == "Hello")
         #expect(data?.timestamp == nil)
