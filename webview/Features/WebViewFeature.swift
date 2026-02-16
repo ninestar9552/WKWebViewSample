@@ -269,7 +269,7 @@ nonisolated struct WebViewFeature: Reducer {
         state: inout State,
         bridgeClient: BridgeClient
     ) -> Effect<Action> {
-        switch request.type {
+        switch request.method {
         case .greeting:
             return handleGreeting(request, bridgeClient: bridgeClient)
         case .getUserInfo:
@@ -295,13 +295,12 @@ nonisolated struct WebViewFeature: Reducer {
         ///
         /// TCA: sendToJS 호출이 Effect.run { } 안으로 이동
         /// → Reducer 본체는 순수하게 상태만 변경, 사이드 이펙트는 Effect로 분리
-        let callback = request.callback
+        let id = request.id
 
-        guard let data = request.decodeData(GreetingRequestData.self) else {
+        guard let data = request.decodeParams(GreetingRequestData.self) else {
             return .run { _ in
                 bridgeClient.send(
-                    function: callback,
-                    response: BridgeResponse(success: false, message: "메시지 전송에 실패했습니다.")
+                    response: BridgeResponse(id: id, code: .invalidParams, message: "메시지 전송에 실패했습니다.")
                 )
             }
         }
@@ -309,25 +308,18 @@ nonisolated struct WebViewFeature: Reducer {
         let text = data.text
         return .run { _ in
             bridgeClient.send(
-                function: callback,
-                response: BridgeResponse(
-                    success: true,
-                    message: "메시지를 수신했습니다.",
-                    data: GreetingResponseData(text: text)
-                )
+                response: BridgeResponse(id: id, result: GreetingResponseData(text: text))
             )
         }
     }
 
     private func handleGetUserInfo(_ request: BridgeRequest, bridgeClient: BridgeClient) -> Effect<Action> {
-        let callback = request.callback
+        let id = request.id
         return .run { _ in
             bridgeClient.send(
-                function: callback,
                 response: BridgeResponse(
-                    success: true,
-                    message: "사용자 정보를 불러왔습니다.",
-                    data: UserInfoResponseData(
+                    id: id,
+                    result: UserInfoResponseData(
                         name: "차순혁",
                         device: await UIDevice.current.model,
                         osVersion: await UIDevice.current.systemVersion
@@ -338,15 +330,13 @@ nonisolated struct WebViewFeature: Reducer {
     }
 
     private func handleGetAppVersion(_ request: BridgeRequest, bridgeClient: BridgeClient) -> Effect<Action> {
-        let callback = request.callback
+        let id = request.id
         return .run { _ in
             let appVersion = await Bundle.main.appVersion
             bridgeClient.send(
-                function: callback,
                 response: BridgeResponse(
-                    success: true,
-                    message: "앱 버전 정보를 불러왔습니다.",
-                    data: AppVersionResponseData(
+                    id: id,
+                    result: AppVersionResponseData(
                         appVersion: appVersion,
                         osVersion: await UIDevice.current.systemVersion,
                         device: await UIDevice.current.modelIdentifier
@@ -361,14 +351,13 @@ nonisolated struct WebViewFeature: Reducer {
         state: inout State,
         bridgeClient: BridgeClient
     ) -> Effect<Action> {
-        let callback = request.callback
+        let id = request.id
 
-        guard let data = request.decodeData(OpenUrlRequestData.self),
+        guard let data = request.decodeParams(OpenUrlRequestData.self),
               let url = URL(string: data.url) else {
             return .run { _ in
                 bridgeClient.send(
-                    function: callback,
-                    response: BridgeResponse(success: false, message: "유효하지 않은 URL입니다.")
+                    response: BridgeResponse(id: id, code: .invalidParams, message: "유효하지 않은 URL입니다.")
                 )
             }
         }
@@ -379,8 +368,7 @@ nonisolated struct WebViewFeature: Reducer {
 
         return .run { _ in
             bridgeClient.send(
-                function: callback,
-                response: BridgeResponse(success: true, message: "새 화면에서 URL을 엽니다.")
+                response: BridgeResponse(id: id, result: EmptyData())
             )
         }
     }
@@ -390,13 +378,12 @@ nonisolated struct WebViewFeature: Reducer {
         state: inout State,
         bridgeClient: BridgeClient
     ) -> Effect<Action> {
-        let callback = request.callback
+        let id = request.id
 
-        guard let data = request.decodeData(ShowToastRequestData.self) else {
+        guard let data = request.decodeParams(ShowToastRequestData.self) else {
             return .run { _ in
                 bridgeClient.send(
-                    function: callback,
-                    response: BridgeResponse(success: false, message: "메시지가 없습니다.")
+                    response: BridgeResponse(id: id, code: .invalidParams, message: "메시지가 없습니다.")
                 )
             }
         }
@@ -407,8 +394,7 @@ nonisolated struct WebViewFeature: Reducer {
 
         return .run { _ in
             bridgeClient.send(
-                function: callback,
-                response: BridgeResponse(success: true, message: "토스트를 표시합니다.")
+                response: BridgeResponse(id: id, result: EmptyData())
             )
         }
     }

@@ -26,11 +26,11 @@ import WebKit
 // │ BridgeHandler → onMessageReceived?(request)                             │
 // │                  → store.send(.bridgeMessageReceived(request))          │
 // │ Reducer → Effect.run { bridgeClient.send(...) }                        │
-// │                  → bridgeHandler.sendRawJS(function:jsonString:)        │
+// │                  → bridgeHandler.sendRawJS(jsonString:)                │
 // │                                                                         │
 // │ - BridgeMessageSender 프로토콜 삭제 → BridgeClient Dependency로 대체    │
 // │ - viewModel 참조 삭제 → 클로저 콜백(onMessageReceived)으로 대체          │
-// │ - sendToJS<T> 제네릭 메서드 → sendRawJS(이미 인코딩된 JSON 전송)로 단순화│
+// │ - sendToJS<T> 제네릭 메서드 → sendRawJS(jsonString:)로 단순화           │
 // └─────────────────────────────────────────────────────────────────────────┘
 
 /// JS ↔ Native 양방향 Bridge 통신을 전담하는 핸들러 (인프라 역할)
@@ -82,9 +82,9 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
 
         guard let request = decodeBridgeRequest(from: message.body) else {
             print("❌ 메시지 파싱 실패: \(message.body)")
-            /// 알 수 없는 type이면 디코딩 자체가 실패하므로, callback을 수동으로 꺼내 에러 응답
-            let callback = (message.body as? [String: Any])?["callback"] as? String
-            sendRawJS(function: callback, jsonString: "{\"success\":false,\"message\":\"요청을 처리할 수 없습니다.\"}")
+            /// 알 수 없는 method이면 디코딩 자체가 실패하므로, id를 수동으로 꺼내 에러 응답
+            let id = (message.body as? [String: Any])?["id"] as? String ?? "unknown"
+            sendRawJS(jsonString: "{\"id\":\"\(id)\",\"error\":{\"code\":\"PARSE_ERROR\",\"message\":\"요청을 처리할 수 없습니다.\"}}")
             return
         }
 
@@ -93,20 +93,14 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
 
     // MARK: - Native → JS 응답
 
-    /// 이미 JSON 인코딩된 문자열을 JS 콜백 함수에 전달
-    /// - MVVM: sendToJS<T>(function:response:) — 제네릭으로 여기서 인코딩
-    /// - TCA: sendRawJS(function:jsonString:) — BridgeClient가 이미 인코딩한 JSON을 전달받음
-    ///   → BridgeClient.send()가 인코딩을 담당하므로 여기서는 전달만
-    /// - callback 함수명의 유효성을 검증하여 JS Injection을 방지
-    func sendRawJS(function: String?, jsonString: String) {
-        guard let function = function else { return }
-
-        guard isValidJSFunctionName(function) else {
-            print("[Security] 유효하지 않은 콜백 함수명 차단: \(function)")
-            return
-        }
-
-        let jsCode = "\(function)(\(jsonString));"
+    /// RPC 응답 JSON을 단일 엔트리포인트(window.__bridgeResolve)로 전달
+    /// - Callback 기반: "\(function)(\(jsonString));" → 함수명이 동적이라 JS Injection 벡터
+    /// - RPC 기반: "window.__bridgeResolve(\(jsonString));" → 고정 함수명이라 Injection 불가
+    ///   → isValidJSFunctionName() 검증이 더 이상 필요하지 않음
+    ///
+    /// 추후 커밋에서 evaluateJavaScript → callAsyncJavaScript로 전환 예정
+    func sendRawJS(jsonString: String) {
+        let jsCode = "window.__bridgeResolve(\(jsonString));"
         print("📤 [Native → JS]\n\(jsCode)")
         webView?.evaluateJavaScript(jsCode) { @Sendable _, error in
             if let error = error {
@@ -116,12 +110,6 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     }
 
     // MARK: - Private
-
-    /// JS 콜백 함수명의 유효성 검증 (JS Injection 방지)
-    nonisolated func isValidJSFunctionName(_ name: String) -> Bool {
-        let pattern = "^[a-zA-Z_$][a-zA-Z0-9_$.]*$"
-        return name.range(of: pattern, options: .regularExpression) != nil
-    }
 
     /// postMessage의 body를 BridgeRequest로 디코딩
     private func decodeBridgeRequest(from body: Any) -> BridgeRequest? {

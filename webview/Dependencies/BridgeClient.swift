@@ -58,17 +58,17 @@ import ComposableArchitecture
 //
 // @DependencyClient
 // struct BridgeClient: Sendable {
-//     var sendRawJS: @Sendable (_ function: String?, _ jsonString: String) -> Void
+//     var sendRawJS: @Sendable (_ jsonString: String) -> Void
 // }
 //
 // // 편의 메서드만 직접 작성
 // extension BridgeClient {
-//     func send<T: Encodable & Sendable>(function: String?, response: BridgeResponse<T>) {
+//     func send<T: Encodable & Sendable>(response: BridgeResponse<T>) {
 //         let encoder = JSONEncoder()
 //         encoder.outputFormatting = .sortedKeys
 //         guard let jsonData = try? encoder.encode(response),
 //               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-//         sendRawJS(function, jsonString)
+//         sendRawJS(jsonString)
 //     }
 // }
 //
@@ -95,16 +95,16 @@ import ComposableArchitecture
 
 /// MVVM의 `BridgeMessageSender` 프로토콜을 대체하는 TCA Dependency
 /// - MVVM: protocol + class → TCA: struct + closure
-/// - JS 콜백 함수에 응답을 전송하는 역할
+/// - RPC 응답 JSON을 JS에 전송하는 역할
 nonisolated struct BridgeClient: Sendable {
 
-    /// JS에 원시 문자열을 전송하는 클로저
-    /// - function: JS 콜백 함수명 (예: "receiveUserInfo")
-    /// - jsonString: JSON 인코딩된 응답 문자열
+    /// JSON 인코딩된 RPC 응답을 JS에 전송하는 클로저
+    /// - jsonString: BridgeResponse를 JSON 인코딩한 문자열
     ///
-    /// MVVM에서는 BridgeHandler.sendToJS() 메서드가 이 역할을 했음
-    /// TCA에서는 이 클로저를 통해 실제 BridgeHandler에게 위임
-    var sendRawJS: @Sendable (_ function: String?, _ jsonString: String) -> Void
+    /// Callback 기반: sendRawJS(function, jsonString) → "\(function)(\(jsonString));"
+    /// RPC 기반: sendRawJS(jsonString) → "window.__bridgeResolve(\(jsonString));"
+    /// → 콜백 함수명이 제거되어 JS Injection 벡터가 사라짐
+    var sendRawJS: @Sendable (_ jsonString: String) -> Void
 }
 
 // MARK: - 편의 메서드
@@ -114,12 +114,12 @@ nonisolated extension BridgeClient {
     /// BridgeResponse<T>를 JSON으로 인코딩하여 JS에 전송
     /// - MVVM에서 BridgeHandler.sendToJS<T>(function:response:)에 해당
     /// - Reducer의 Effect 안에서 호출됨
-    func send<T: Encodable & Sendable>(function: String?, response: BridgeResponse<T>) {
+    func send<T: Encodable & Sendable>(response: BridgeResponse<T>) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         guard let jsonData = try? encoder.encode(response),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-        sendRawJS(function, jsonString)
+        sendRawJS(jsonString)
     }
 }
 
@@ -130,8 +130,8 @@ nonisolated extension BridgeClient {
 /// - testValue: 테스트 시 사용되는 기본값
 ///
 nonisolated extension BridgeClient: DependencyKey {
-    static let liveValue = BridgeClient(sendRawJS: { _, _ in })
-    static let testValue = BridgeClient(sendRawJS: { _, _ in })
+    static let liveValue = BridgeClient(sendRawJS: { _ in })
+    static let testValue = BridgeClient(sendRawJS: { _ in })
 }
 
 nonisolated extension DependencyValues {
