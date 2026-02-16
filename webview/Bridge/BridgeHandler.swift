@@ -43,7 +43,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     /// - deinit(nonisolated)에서 접근하므로 nonisolated 필수
     nonisolated static let handlerName = "nativeBridge"
 
-    /// evaluateJavaScript 호출을 위해 WebView 참조를 보유
+    /// callAsyncJavaScript 호출을 위해 WebView 참조를 보유
     private weak var webView: WKWebView?
 
     /// Bridge 메시지 수신 시 호출되는 콜백
@@ -83,8 +83,11 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
         guard let request = decodeBridgeRequest(from: message.body) else {
             print("❌ 메시지 파싱 실패: \(message.body)")
             /// 알 수 없는 method이면 디코딩 자체가 실패하므로, id를 수동으로 꺼내 에러 응답
+            /// userContentController는 sync이므로 Task로 감싸서 async sendRawJS 호출
             let id = (message.body as? [String: Any])?["id"] as? String ?? "unknown"
-            sendRawJS(jsonString: "{\"id\":\"\(id)\",\"error\":{\"code\":\"PARSE_ERROR\",\"message\":\"요청을 처리할 수 없습니다.\"}}")
+            Task {
+                await sendRawJS(jsonString: "{\"id\":\"\(id)\",\"error\":{\"code\":\"PARSE_ERROR\",\"message\":\"요청을 처리할 수 없습니다.\"}}")
+            }
             return
         }
 
@@ -93,19 +96,41 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
 
     // MARK: - Native → JS 응답
 
-    /// RPC 응답 JSON을 단일 엔트리포인트(window.__bridgeResolve)로 전달
-    /// - Callback 기반: "\(function)(\(jsonString));" → 함수명이 동적이라 JS Injection 벡터
-    /// - RPC 기반: "window.__bridgeResolve(\(jsonString));" → 고정 함수명이라 Injection 불가
-    ///   → isValidJSFunctionName() 검증이 더 이상 필요하지 않음
+    /// RPC 응답 JSON을 callAsyncJavaScript로 전달
     ///
-    /// 추후 커밋에서 evaluateJavaScript → callAsyncJavaScript로 전환 예정
-    func sendRawJS(jsonString: String) {
-        let jsCode = "window.__bridgeResolve(\(jsonString));"
-        print("📤 [Native → JS]\n\(jsCode)")
-        webView?.evaluateJavaScript(jsCode) { @Sendable _, error in
-            if let error = error {
-                print("❌ JS 실행 실패: \(error.localizedDescription)")
-            }
+    /// evaluateJavaScript vs callAsyncJavaScript:
+    /// - evaluateJavaScript: JS 코드 문자열에 데이터를 직접 보간
+    ///   → "window.__bridgeResolve({\"id\":\"...\"})" (문자열 조립)
+    /// - callAsyncJavaScript: arguments 딕셔너리로 데이터를 구조적으로 전달
+    ///   → functionBody: "window.__bridgeResolve(response)"
+    ///   → arguments: ["response": 딕셔너리]
+    ///   → 데이터가 JS 코드에 삽입되지 않으므로 Injection 원천 차단
+    ///
+    /// async인 이유:
+    /// - 호출자(ViewController DI)에 이미 Task { @MainActor in }가 존재
+    /// - sync + 내부 Task를 만들면 이중 Task 중첩 + fire-and-forget (structured concurrency 파괴)
+    /// - async면 기존 Task 안에서 await 체인으로 연결되어 실행 완료 추적 가능
+    ///
+    /// contentWorld: .page — 페이지의 JS 컨텍스트에서 실행
+    /// (window.__bridgeResolve가 정의된 곳)
+    func sendRawJS(jsonString: String) async {
+        guard let jsonData = jsonString.data(using: .utf8),
+              let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) else {
+            print("❌ JSON 파싱 실패: \(jsonString)")
+            return
+        }
+        
+        print("📤 [Native → JS] __bridgeResolve(\(jsonString))")
+
+        do {
+            _ = try await webView?.callAsyncJavaScript(
+                "window.__bridgeResolve(response)",
+                arguments: ["response": jsonObject],
+                in: nil,
+                in: .page
+            )
+        } catch {
+            print("❌ JS 실행 실패: \(error.localizedDescription)")
         }
     }
 

@@ -90,7 +90,7 @@ final class ViewController: UIViewController {
             /// - nonisolated → MainActor 호출이므로 Task로 디스패치 필요
             $0.bridgeClient = BridgeClient(sendRawJS: { [weak handler] jsonString in
                 Task { @MainActor in
-                    handler?.sendRawJS(jsonString: jsonString)
+                    await handler?.sendRawJS(jsonString: jsonString)
                 }
             })
         }
