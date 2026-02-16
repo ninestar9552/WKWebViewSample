@@ -10,7 +10,7 @@ WKWebView 기반의 하이브리드 앱 아키텍처 샘플 프로젝트입니�
 
 | 기능 | 설명 |
 |------|------|
-| **Bridge 통신** | JS ↔ Native 양방향 메시지 전달 (postMessage / evaluateJavaScript) |
+| **Bridge 통신** | JS ↔ Native RPC 기반 양방향 통신 (postMessage / callAsyncJavaScript) |
 | **TCA** | Reducer로 상태 관리, Effect로 사이드 이펙트 분리, Dependency로 의존성 주입 |
 | **도메인 화이트리스트** | 허용된 도메인만 로딩, 미등록 도메인 차단 |
 | **window.open 처리** | 새 창 요청 시 모달로 ViewController 표시 |
@@ -100,8 +100,8 @@ webview/
 ### JS → Native 요청
 
 ```
-[JS] postToNative({ type: "showToast", data: { message: "Hello" } })
-         │
+[JS] callNative("showToast", { message: "Hello" })
+         │ → postMessage({ id: "uuid", method: "showToast", params: { message: "Hello" } })
          ▼
 [BridgeHandler] userContentController(didReceive:)
          │ JSONDecoder → BridgeRequest
@@ -121,16 +121,16 @@ webview/
 ### Native → JS 응답
 
 ```
-[Reducer] return .run { bridgeClient.send(function: "callback", response: ...) }
+[Reducer] return .run { bridgeClient.send(response: BridgeResponse(id: id, result: EmptyData())) }
          │
          ▼
-[BridgeClient] sendRawJS(function, jsonString)  ← Dependency 클로저
+[BridgeClient] sendRawJS(jsonData)  ← Dependency 클로저
          │
          ▼
-[BridgeHandler] webView.evaluateJavaScript("callback({...})")
+[BridgeHandler] webView.callAsyncJavaScript("window.__bridgeResolve(response)", arguments: [...])
          │
          ▼
-[JS] function callback(response) { ... }
+[JS] _pendingRequests[id].resolve(response) → Promise 해소
 ```
 
 ## Bridge 메시지 규격
@@ -139,9 +139,9 @@ webview/
 
 ```javascript
 {
-  "type": "showToast",           // BridgeMessageType
-  "callback": "onToastResult",   // 응답받을 JS 함수명
-  "data": {                      // 요청 데이터
+  "id": "uuid-1234",             // 요청/응답 매칭용 고유 식별자
+  "method": "showToast",         // BridgeMessageType
+  "params": {                    // 요청 데이터 (선택)
     "message": "저장되었습니다"
   }
 }
@@ -150,10 +150,19 @@ webview/
 ### 응답 (Native → JS)
 
 ```javascript
+// 성공
 {
-  "success": true,               // 처리 성공 여부
-  "message": "토스트를 표시합니다",  // 안내 메시지
-  "data": { ... }                // 응답 데이터 (선택)
+  "id": "uuid-1234",             // 요청 id와 동일
+  "result": { ... }              // 응답 데이터
+}
+
+// 실패
+{
+  "id": "uuid-1234",
+  "error": {
+    "code": "INVALID_PARAMS",    // BridgeErrorCode (JS 분기용)
+    "message": "요청 값이 올바르지 않습니다."
+  }
 }
 ```
 
