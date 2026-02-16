@@ -22,18 +22,36 @@ import ComposableArchitecture
 // │ viewModel.handleError(error)           ← 메서드 직접 호출               │
 // │ viewModel.configure(bridgeHandler:)    ← 양방향 의존성 수동 연결         │
 // ├─────────────────────────────────────────────────────────────────────────┤
-// │ TCA (변환 후)                                                           │
+// │ TCA — store.publisher (이 프로젝트에서 사용하는 방식)                     │
 // │                                                                         │
 // │ let store: StoreOf<WebViewFeature>     ← Store 생성 (Reducer + State)   │
-// │ store.publisher.loadProgress.sink { }  ← 동일한 Combine 패턴            │
+// │ store.publisher.loadProgress.sink { }  ← Combine으로 상태 구독          │
 // │ store.send(.errorOccurred(message))    ← 액션을 "보냄"                  │
-// │ bridgeClient = BridgeClient(...)       ← Dependency로 주입              │
+// │ var cancellables = Set<AnyCancellable> ← 모든 구독 저장                 │
+// │ import Combine                         ← 필수                           │
+// ├─────────────────────────────────────────────────────────────────────────┤
+// │ TCA — observe { } (@ObservableState 매크로 사용 시)                      │
+// │                                                                         │
+// │ let store: StoreOf<WebViewFeature>     ← Store 생성 (동일)              │
+// │ observe { store.loadProgress }         ← 상태별 observe 블록으로 구독   │
+// │ observe { store.errorMessage }         ← 해당 상태 변경 시에만 재실행   │
+// │ store.send(.errorOccurred(message))    ← 액션을 "보냄" (동일)           │
+// │ var cancellables = Set<AnyCancellable> ← KVO/Notification 전용으로 축소 │
+// │ import Combine                         ← KVO/Notification 있으면 유지   │
+// │                                                                         │
+// │ 차이점:                                                                  │
+// │ - store.publisher.xxx.sink → observe { store.xxx } (상태별 분리 유지)   │
+// │ - store.xxx 로 직접 상태 접근 (publisher 경유 X)                         │
+// │ - Combine 보일러플레이트 제거 (.sink/.receive/.compactMap/cancellables)  │
+// │ - cancellables 역할 축소 (Store 구독 제거, KVO/Notification만 남음)      │
+// │ - Combine import는 KVO/Notification 때문에 여전히 필요                   │
 // └─────────────────────────────────────────────────────────────────────────┘
 
 /// WKWebView를 표시하고 로컬 HTML을 로딩하는 ViewController
 /// - Bridge 통신 로직은 BridgeHandler에 위임하여 ViewController는 화면 구성에만 집중
 /// - MVVM: ViewModel의 @Published 상태를 Combine으로 구독
-/// - TCA: Store의 publisher를 Combine으로 구독 (동일한 패턴)
+/// - TCA (store.publisher): Store의 publisher를 Combine으로 구독 (동일한 패턴)
+/// - TCA (@ObservableState): observe { } 블록에서 store.xxx로 직접 접근 (Combine 불필요)
 /// - 팝업 모드: createWebViewWith에서 전달받은 configuration으로 생성되어 새 창으로 표시
 final class ViewController: UIViewController {
 
@@ -45,6 +63,11 @@ final class ViewController: UIViewController {
     /// TCA Store — 비즈니스 로직과 상태를 관리
     /// - MVVM: let viewModel = WebViewViewModel()
     /// - TCA: Store<WebViewFeature.State, WebViewFeature.Action>
+    ///
+    /// @ObservableState 사용 시:
+    /// - Store 생성 방식은 동일 (withDependencies 포함)
+    /// - 상태 접근 방식만 변경: store.publisher.xxx → store.xxx (observe 블록 내)
+    /// - store.send(.action) 호출 방식은 동일
     ///
     /// lazy 이유: BridgeClient에 bridgeHandler.sendRawJS를 연결해야 하므로
     /// bridgeHandler가 먼저 초기화된 후 Store를 생성
@@ -59,6 +82,7 @@ final class ViewController: UIViewController {
             /// BridgeClient의 실제 구현을 BridgeHandler에 연결
             /// - MVVM: viewModel.configure(bridgeHandler: bridgeHandler)
             /// - TCA: Dependency로 주입 — sendRawJS 클로저가 bridgeHandler를 캡처
+            /// - @ObservableState: 동일 — 의존성 주입 방식은 변하지 않음
             ///
             /// Task { @MainActor in } 이유:
             /// - BridgeHandler.sendRawJS는 MainActor에 격리됨 (WKScriptMessageHandler 채택)
@@ -73,7 +97,10 @@ final class ViewController: UIViewController {
     }()
 
     /// Combine 구독 저장소
-    /// - MVVM/TCA 모두 Combine .sink를 사용하므로 그대로 유지
+    /// - MVVM/TCA(store.publisher): 모든 상태 구독 + KVO/Notification 저장
+    /// - TCA(@ObservableState): Store 상태 구독은 observe { }가 대체하므로
+    ///   KVO(estimatedProgress)와 NotificationCenter(didBecomeActive) 전용으로 축소
+    ///   → Store 구독 4개 제거, KVO 1개 + Notification 1개만 남음
     var cancellables = Set<AnyCancellable>()
 
     /// WebView 인스턴스 (createWebViewWith에서 반환해야 하므로 internal 접근)
@@ -281,12 +308,14 @@ final class ViewController: UIViewController {
     /// - MVVM: bridgeHandler ↔ viewModel 양방향 참조 설정
     /// - TCA: bridgeHandler에 WebView만 주입 + onMessageReceived로 Store 연결
     ///   (BridgeClient → bridgeHandler 연결은 Store 생성 시 withDependencies에서 처리)
+    /// - @ObservableState: 동일 — store.send(.action) 호출 방식은 변하지 않음
     private func configureDependencies() {
         bridgeHandler.configure(webView: webView)
 
         /// BridgeHandler가 메시지를 수신하면 Store에 액션으로 전달
         /// - MVVM: bridgeHandler → viewModel.handleBridgeMessage(request)
         /// - TCA: bridgeHandler → store.send(.bridgeMessageReceived(request))
+        /// - @ObservableState: 동일 — store.send()는 구독 방식과 무관
         bridgeHandler.onMessageReceived = { [weak self] request in
             self?.store.send(.bridgeMessageReceived(request))
         }
