@@ -85,8 +85,12 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
             /// 알 수 없는 method이면 디코딩 자체가 실패하므로, id를 수동으로 꺼내 에러 응답
             /// userContentController는 sync이므로 Task로 감싸서 async sendRawJS 호출
             let id = (message.body as? [String: Any])?["id"] as? String ?? "unknown"
-            Task {
-                await sendRawJS(jsonString: "{\"id\":\"\(id)\",\"error\":{\"code\":\"PARSE_ERROR\",\"message\":\"요청을 처리할 수 없습니다.\"}}")
+            let errorResponse: [String: Any] = [
+                "id": id,
+                "error": ["code": "PARSE_ERROR", "message": "요청을 처리할 수 없습니다."]
+            ]
+            if let errorData = try? JSONSerialization.data(withJSONObject: errorResponse) {
+                Task { await sendRawJS(jsonData: errorData) }
             }
             return
         }
@@ -96,7 +100,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
 
     // MARK: - Native → JS 응답
 
-    /// RPC 응답 JSON을 callAsyncJavaScript로 전달
+    /// RPC 응답 JSON Data를 callAsyncJavaScript로 전달
     ///
     /// evaluateJavaScript vs callAsyncJavaScript:
     /// - evaluateJavaScript: JS 코드 문자열에 데이터를 직접 보간
@@ -113,14 +117,15 @@ final class BridgeHandler: NSObject, WKScriptMessageHandler {
     ///
     /// contentWorld: .page — 페이지의 JS 컨텍스트에서 실행
     /// (window.__bridgeResolve가 정의된 곳)
-    func sendRawJS(jsonString: String) async {
-        guard let jsonData = jsonString.data(using: .utf8),
-              let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) else {
-            print("❌ JSON 파싱 실패: \(jsonString)")
+    func sendRawJS(jsonData: Data) async {
+        guard let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) else {
+            print("❌ JSON 파싱 실패")
             return
         }
-        
-        print("📤 [Native → JS] __bridgeResolve(\(jsonString))")
+
+        if let logString = String(data: jsonData, encoding: .utf8) {
+            print("📤 [Native → JS] __bridgeResolve(\(logString))")
+        }
 
         do {
             _ = try await webView?.callAsyncJavaScript(

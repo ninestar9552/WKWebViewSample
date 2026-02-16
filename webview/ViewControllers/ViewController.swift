@@ -88,9 +88,9 @@ final class ViewController: UIViewController {
             /// - BridgeHandler.sendRawJS는 MainActor에 격리됨 (WKScriptMessageHandler 채택)
             /// - BridgeClient.sendRawJS는 @Sendable 클로저 (Effect.run의 nonisolated 컨텍스트에서 호출)
             /// - nonisolated → MainActor 호출이므로 Task로 디스패치 필요
-            $0.bridgeClient = BridgeClient(sendRawJS: { [weak handler] jsonString in
+            $0.bridgeClient = BridgeClient(sendRawJS: { [weak handler] jsonData in
                 Task { @MainActor in
-                    await handler?.sendRawJS(jsonString: jsonString)
+                    await handler?.sendRawJS(jsonData: jsonData)
                 }
             })
         }

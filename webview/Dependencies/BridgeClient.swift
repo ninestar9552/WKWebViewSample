@@ -58,7 +58,7 @@ import ComposableArchitecture
 //
 // @DependencyClient
 // struct BridgeClient: Sendable {
-//     var sendRawJS: @Sendable (_ jsonString: String) -> Void
+//     var sendRawJS: @Sendable (_ jsonData: Data) -> Void
 // }
 //
 // // 편의 메서드만 직접 작성
@@ -66,9 +66,8 @@ import ComposableArchitecture
 //     func send<T: Encodable & Sendable>(response: BridgeResponse<T>) {
 //         let encoder = JSONEncoder()
 //         encoder.outputFormatting = .sortedKeys
-//         guard let jsonData = try? encoder.encode(response),
-//               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-//         sendRawJS(jsonString)
+//         guard let jsonData = try? encoder.encode(response) else { return }
+//         sendRawJS(jsonData)
 //     }
 // }
 //
@@ -99,12 +98,12 @@ import ComposableArchitecture
 nonisolated struct BridgeClient: Sendable {
 
     /// JSON 인코딩된 RPC 응답을 JS에 전송하는 클로저
-    /// - jsonString: BridgeResponse를 JSON 인코딩한 문자열
+    /// - jsonData: BridgeResponse를 JSONEncoder로 인코딩한 Data
     ///
     /// Callback 기반: sendRawJS(function, jsonString) → "\(function)(\(jsonString));"
-    /// RPC 기반: sendRawJS(jsonString) → "window.__bridgeResolve(\(jsonString));"
-    /// → 콜백 함수명이 제거되어 JS Injection 벡터가 사라짐
-    var sendRawJS: @Sendable (_ jsonString: String) -> Void
+    /// RPC 기반: sendRawJS(jsonData) → callAsyncJavaScript(arguments: jsonObject)
+    /// → 콜백 함수명 제거 + 문자열 보간 제거로 JS Injection 벡터 차단
+    var sendRawJS: @Sendable (_ jsonData: Data) -> Void
 }
 
 // MARK: - 편의 메서드
@@ -117,9 +116,8 @@ nonisolated extension BridgeClient {
     func send<T: Encodable & Sendable>(response: BridgeResponse<T>) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
-        guard let jsonData = try? encoder.encode(response),
-              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-        sendRawJS(jsonString)
+        guard let jsonData = try? encoder.encode(response) else { return }
+        sendRawJS(jsonData)
     }
 }
 
