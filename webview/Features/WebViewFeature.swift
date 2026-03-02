@@ -117,6 +117,14 @@ nonisolated struct WebViewFeature: Reducer {
     /// - MVVM: viewModel.$loadProgress.sink { } (Combine)
     /// - TCA: store.publisher.loadProgress.sink { } (동일한 Combine 패턴)
     struct State: Equatable {
+        /// WebContent 종료 복구 상태머신
+        enum RecoveryState: Equatable {
+            case idle
+            case loaded(URL)
+            case terminated(lastURL: URL?)
+            case needsRecovery(lastURL: URL)
+            case recovering(lastURL: URL)
+        }
 
         /// 웹뷰 로딩 진행률 (0.0 ~ 1.0)
         /// - MVVM: @Published var loadProgress: Double = 0.0
@@ -136,6 +144,10 @@ nonisolated struct WebViewFeature: Reducer {
         /// - MVVM: @Event var toastMessage: String
         /// - TCA: Optional String → nil이 아니면 토스트 표시 → .toastShown으로 초기화
         var toastMessage: String? = nil
+
+        /// 마지막 정상 페이지/복구 필요 여부를 나타내는 상태
+        var recoveryState: RecoveryState = .idle
+
     }
 
     // MARK: - Action
@@ -160,6 +172,15 @@ nonisolated struct WebViewFeature: Reducer {
         /// - MVVM: viewModel.handleError(error)
         case errorOccurred(String)
 
+        /// 페이지 로딩 완료 (마지막 유효 URL 갱신)
+        case pageDidFinish(URL?)
+
+        /// WebContent 프로세스 종료 감지
+        case webContentProcessDidTerminate
+
+        /// 앱 활성화 감지 (복구 시도 트리거)
+        case appDidBecomeActive
+
         // --- BridgeHandler → Store (Bridge 이벤트) ---
 
         /// JS에서 Bridge 메시지가 도착함
@@ -178,6 +199,9 @@ nonisolated struct WebViewFeature: Reducer {
 
         /// ViewController가 토스트를 표시함 → toastMessage를 nil로 초기화
         case toastShown
+
+        /// ViewController가 복구 load를 시작했음을 알림
+        case recoveryLoadStarted
     }
 
     // MARK: - Reducer Body
@@ -226,6 +250,40 @@ nonisolated struct WebViewFeature: Reducer {
                 state.errorMessage = message
                 return .none
 
+            // MARK: Recovery (WebContent 종료 복구 상태머신)
+
+            case .pageDidFinish(let url):
+                guard let url, url.absoluteString != "about:blank" else {
+                    return .none
+                }
+                state.recoveryState = .loaded(url)
+                return .none
+
+            case .webContentProcessDidTerminate:
+                switch state.recoveryState {
+                case .loaded(let lastURL):
+                    state.recoveryState = .terminated(lastURL: lastURL)
+                case .needsRecovery(let lastURL):
+                    state.recoveryState = .terminated(lastURL: lastURL)
+                case .recovering(let lastURL):
+                    state.recoveryState = .terminated(lastURL: lastURL)
+                case .terminated(let lastURL):
+                    state.recoveryState = .terminated(lastURL: lastURL)
+                case .idle:
+                    state.recoveryState = .terminated(lastURL: nil)
+                }
+                return .none
+
+            case .appDidBecomeActive:
+                switch state.recoveryState {
+                case .terminated(let lastURL?), .recovering(let lastURL):
+                    // 종료 상태뿐 아니라 recovering 고착 상태에서도 재시도 루프로 재진입
+                    state.recoveryState = .needsRecovery(lastURL: lastURL)
+                    return .none
+                default:
+                    return .none
+                }
+
             // MARK: Bridge
 
             case .bridgeMessageReceived(let request):
@@ -251,8 +309,16 @@ nonisolated struct WebViewFeature: Reducer {
             case .toastShown:
                 state.toastMessage = nil
                 return .none
+
+            case .recoveryLoadStarted:
+                guard case .needsRecovery(let lastURL) = state.recoveryState else {
+                    return .none
+                }
+                state.recoveryState = .recovering(lastURL: lastURL)
+                return .none
             }
         }
+        ._printChanges()
     }
 
     // MARK: - Bridge Message Handlers

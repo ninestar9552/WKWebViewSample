@@ -328,6 +328,109 @@ private func decodeResponse(_ data: Data) -> [String: Any]? {
         }
     }
 
+    // MARK: - White Screen Recovery State Machine
+
+    @Test func pageDidFinish_유효_URL_로드상태로_전이() async {
+        let store = TestStore(initialState: WebViewFeature.State()) {
+            WebViewFeature()
+        }
+        let url = URL(string: "https://www.apple.com")!
+
+        await store.send(.pageDidFinish(url)) {
+            $0.recoveryState = .loaded(url)
+        }
+    }
+
+    @Test func terminated_후_didBecomeActive_복구필요상태로_전이() async {
+        let url = URL(string: "https://www.apple.com")!
+        let store = TestStore(initialState: WebViewFeature.State()) {
+            WebViewFeature()
+        }
+
+        await store.send(.pageDidFinish(url)) {
+            $0.recoveryState = .loaded(url)
+        }
+
+        await store.send(.webContentProcessDidTerminate) {
+            $0.recoveryState = .terminated(lastURL: url)
+        }
+
+        await store.send(.appDidBecomeActive) {
+            $0.recoveryState = .needsRecovery(lastURL: url)
+        }
+    }
+
+    /// 전이 단위 테스트:
+    /// recovering 진입 자체가 깨졌는지 빠르게 식별하기 위해 분리
+    @Test func recoveryLoadStarted_복구요청상태에서_recovering으로_전이() async {
+        let url = URL(string: "https://www.apple.com")!
+        let store = TestStore(
+            initialState: WebViewFeature.State(
+                recoveryState: .needsRecovery(lastURL: url)
+            )
+        ) {
+            WebViewFeature()
+        }
+
+        await store.send(.recoveryLoadStarted) {
+            $0.recoveryState = .recovering(lastURL: url)
+        }
+    }
+
+    @Test func recovering_후_didBecomeActive_복구요청상태로_재진입() async {
+        let url = URL(string: "https://www.apple.com")!
+        let store = TestStore(
+            initialState: WebViewFeature.State(
+                recoveryState: .recovering(lastURL: url)
+            )
+        ) {
+            WebViewFeature()
+        }
+
+        await store.send(.appDidBecomeActive) {
+            $0.recoveryState = .needsRecovery(lastURL: url)
+        }
+    }
+
+    /// 통합 전이 테스트:
+    /// loaded -> terminated -> needsRecovery -> recovering -> loaded 전체 고리 검증
+    @Test func 백화현상_복구_전체흐름_recovering에서_loaded까지_전이() async {
+        let url = URL(string: "https://www.apple.com")!
+        let store = TestStore(initialState: WebViewFeature.State()) {
+            WebViewFeature()
+        }
+
+        await store.send(.pageDidFinish(url)) {
+            $0.recoveryState = .loaded(url)
+        }
+
+        await store.send(.webContentProcessDidTerminate) {
+            $0.recoveryState = .terminated(lastURL: url)
+        }
+
+        await store.send(.appDidBecomeActive) {
+            $0.recoveryState = .needsRecovery(lastURL: url)
+        }
+
+        await store.send(.recoveryLoadStarted) {
+            $0.recoveryState = .recovering(lastURL: url)
+        }
+
+        await store.send(.pageDidFinish(url)) {
+            $0.recoveryState = .loaded(url)
+        }
+    }
+
+    @Test func terminated_lastURL없음_didBecomeActive_복구미시도() async {
+        let store = TestStore(
+            initialState: WebViewFeature.State(recoveryState: .terminated(lastURL: nil))
+        ) {
+            WebViewFeature()
+        }
+
+        await store.send(.appDidBecomeActive)
+    }
+
     // MARK: - Event Consumption (TCA에서 추가된 테스트)
 
     /// MVVM에서는 @Event가 자동 소비되어 이런 테스트가 불필요했음
