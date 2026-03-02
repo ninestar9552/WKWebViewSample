@@ -100,7 +100,7 @@ final class ViewController: UIViewController {
     /// - MVVM/TCA(store.publisher): 모든 상태 구독 + KVO/Notification 저장
     /// - TCA(@ObservableState): Store 상태 구독은 observe { }가 대체하므로
     ///   KVO(estimatedProgress)와 NotificationCenter(didBecomeActive) 전용으로 축소
-    ///   → Store 구독 4개 제거, KVO 1개 + Notification 1개만 남음
+    ///   → Store 구독 5개 제거, KVO 1개 + Notification 1개만 남음
     var cancellables = Set<AnyCancellable>()
 
     /// WebView 인스턴스 (createWebViewWith에서 반환해야 하므로 internal 접근)
@@ -111,12 +111,6 @@ final class ViewController: UIViewController {
 
     /// 외부에서 주입받은 URL (푸시 모드 - Bridge openUrl)
     private var initialURL: URL?
-
-    /// 백화현상 복구용 마지막 유효 URL
-    var lastLoadedURL: URL?
-
-    /// 백화현상 발생 여부 (didBecomeActive에서 복구)
-    var needsReload = false
 
     /// 팝업 모드 여부 (window.open → 모달)
     private var isPopupMode: Bool { externalConfiguration != nil }

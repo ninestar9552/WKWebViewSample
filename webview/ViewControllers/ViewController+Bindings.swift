@@ -27,6 +27,7 @@ import Combine
 // │ store.publisher.errorMessage.sink { }   ← Store publisher 구독          │
 // │ store.publisher.urlToOpen.sink { }      ← Store publisher 구독          │
 // │ store.publisher.toastMessage.sink { }   ← Store publisher 구독          │
+// │ store.publisher.recoveryState.sink { }  ← 복구 상태 구독                │
 // │                                                                         │
 // │ 특징:                                                                    │
 // │ - Combine 기반 → AnyCancellable + cancellables Set 필요                 │
@@ -41,6 +42,7 @@ import Combine
 // │ observe { if let m = store.errorMessage { showErrorAlert(m) } }         │
 // │ observe { if let u = store.urlToOpen { pushWebVC(u) } }                 │
 // │ observe { if let m = store.toastMessage { showToast(m) } }              │
+// │ observe { if case .needsRecovery(let u) = store.recoveryState { ... } } │
 // │                                                                         │
 // │ 특징:                                                                    │
 // │ - 상태별로 observe 블록을 분리 → 해당 상태 변경 시에만 블록 재실행         │
@@ -72,6 +74,7 @@ extension ViewController {
     ///     bindOpenUrl()    // observe { if let u = store.urlToOpen { ... } }
     ///     bindToast()      // observe { if let m = store.toastMessage { ... } }
     ///     bindAppLifecycle() // NotificationCenter → Combine 유지
+    ///     bindRecovery()   // observe { if case .needsRecovery(let u) = store.recoveryState { ... } }
     /// }
     func setupBindings() {
         bindProgress()
@@ -79,6 +82,7 @@ extension ViewController {
         bindOpenUrl()
         bindToast()
         bindAppLifecycle()
+        bindRecovery()
     }
 
     // MARK: - Progress
@@ -283,17 +287,26 @@ extension ViewController {
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.recoverFromWhiteScreenIfNeeded()
+                self?.store.send(.appDidBecomeActive)
             }
             .store(in: &cancellables)
     }
 
-    /// 백화현상 복구: WebContent 프로세스 종료 후 앱이 다시 활성화되면 마지막 URL로 재로딩
-    private func recoverFromWhiteScreenIfNeeded() {
-        guard needsReload, let url = lastLoadedURL else { return }
-        print("🔄 백화현상 복구: \(url)")
-        needsReload = false
-        webView.load(URLRequest(url: url))
+    /// recoveryState가 needsRecovery로 전이되면 실제 WebView load를 수행
+    private func bindRecovery() {
+        store.publisher.recoveryState
+            .receive(on: DispatchQueue.main)
+            .compactMap { state -> URL? in
+                guard case .needsRecovery(let url) = state else { return nil }
+                return url
+            }
+            .sink { [weak self] url in
+                guard let self else { return }
+                print("🔄 백화현상 복구: \(url)")
+                self.webView.load(URLRequest(url: url))
+                self.store.send(.recoveryLoadStarted)
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Error Alert

@@ -243,18 +243,33 @@ deinit {
 ### 백화현상 복구
 
 WKWebView의 WebContent 프로세스가 메모리 부족으로 종료되면 흰 화면이 됩니다.
-`didBecomeActiveNotification`을 구독하여 앱 복귀 시 자동으로 마지막 URL을 재로딩합니다.
+이 프로젝트는 이를 TCA 상태머신으로 모델링하여 복구 타이밍을 통제합니다.
 
 ```swift
+// 1) 이벤트를 Store로 전달
 func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-    needsReload = true
+    store.send(.webContentProcessDidTerminate)
 }
 
 NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
     .sink { [weak self] _ in
-        if self?.needsReload == true {
-            self?.webView.load(URLRequest(url: lastLoadedURL))
-        }
+        self?.store.send(.appDidBecomeActive)
+    }
+
+// 2) Reducer가 상태 전이 결정
+// loaded(url) -> terminated(lastURL: url)
+// terminated(lastURL: url) + didBecomeActive -> needsRecovery(lastURL: url)
+// recovering(lastURL: url) + didBecomeActive -> needsRecovery(lastURL: url)  // 재시도 진입
+
+// 3) ViewController는 recoveryState(.needsRecovery)만 소비해서 실제 load 수행
+store.publisher.recoveryState
+    .compactMap { state -> URL? in
+        guard case .needsRecovery(let url) = state else { return nil }
+        return url
+    }
+    .sink { [weak self] url in
+        self?.webView.load(URLRequest(url: url))
+        self?.store.send(.recoveryLoadStarted)
     }
 ```
 

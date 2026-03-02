@@ -87,16 +87,14 @@ extension ViewController: WKNavigationDelegate {
         store.send(.errorOccurred(error.localizedDescription))
     }
 
-    /// 페이지 로딩 완료 시 현재 URL을 저장 (백화현상 복구용)
+    /// 페이지 로딩 완료 이벤트를 Store로 전달 (복구 상태머신 갱신)
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if let url = webView.url, url.absoluteString != "about:blank" {
-            lastLoadedURL = url
-        }
+        store.send(.pageDidFinish(webView.url))
     }
 
-    /// WKWebView 콘텐츠 프로세스가 종료되었을 때 호출 (백화현상)
+    /// WKWebView 콘텐츠 프로세스 종료 이벤트를 Store로 전달
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         print("⚠️ WebContent Process Terminated (백화현상)")
-        needsReload = true
+        store.send(.webContentProcessDidTerminate)
     }
 }
